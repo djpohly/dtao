@@ -20,11 +20,9 @@
 #include FT_FREETYPE_H
 
 #define FONTFILE "/usr/share/fonts/OTF/FantasqueSansMono-Regular.otf"
-#define PTSIZE 18
-#define TEXT "hello world"
+#define TEXT "howdy world"
 #define TEXTHEIGHT 24
 #define BASE 200
-#define LEFT 10
 
 // Text color
 #define RED 200
@@ -54,6 +52,10 @@ static bool run_display = true;
 static double frame = 0;
 static int cur_x = -1, cur_y = -1;
 static int buttons = 0;
+static int ptsize = 16;
+
+static FT_Library library;
+static FT_Face face;
 
 static struct {
 	struct timespec last_frame;
@@ -168,36 +170,17 @@ draw_frame(void)
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
-	FT_Library library;
-	FT_Face face;
-
 	FT_GlyphSlot slot;
 	FT_Vector pen;		/* untransformed origin  */
 	FT_Error error;
 
-	char *filename;
 	char *text;
 
-	int points;
-	int target_height;
 	int n, num_chars;
 
 
-	filename = FONTFILE;
 	text = TEXT;
-	points = PTSIZE;
 	num_chars = strlen(text);
-	target_height = TEXTHEIGHT;
-
-	error = FT_Init_FreeType(&library);	/* initialize library */
-	/* error handling omitted */
-
-	error = FT_New_Face(library, filename, 0, &face);	/* create face object */
-	/* error handling omitted */
-
-	/* use 50pt at 100dpi */
-	error = FT_Set_Char_Size(face, points * 64, 0, 100, 0);	/* set character size */
-	/* error handling omitted */
 
 	/* cmap selection omitted;                                        */
 	/* for simplicity we assume that the font contains a Unicode cmap */
@@ -205,9 +188,8 @@ draw_frame(void)
 	slot = face->glyph;
 
 	/* the pen position in 26.6 cartesian space coordinates; */
-	/* start at (300,200) relative to the upper left corner  */
-	pen.x = LEFT * 64;
-	pen.y = 0; //(target_height - BASE) * 64;
+	pen.x = 0;
+	pen.y = -face->size->metrics.descender;
 
 	for (n = 0; n < num_chars; n++) {
 		/* set transformation */
@@ -221,15 +203,12 @@ draw_frame(void)
 		/* now, draw to our target surface (convert position) */
 		draw_bitmap(data, &slot->bitmap,
 				slot->bitmap_left,
-				target_height - slot->bitmap_top);
+				height - slot->bitmap_top);
 
 		/* increment pen position */
 		pen.x += slot->advance.x;
 		pen.y += slot->advance.y;
 	}
-
-	FT_Done_Face(face);
-	FT_Done_FreeType(library);
 
 
 /* 	/1* Draw checkerboxed background *1/ */
@@ -332,7 +311,7 @@ main(int argc, char **argv)
 	anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-	while ((c = getopt(argc, argv, "xw:h:o:")) != -1) {
+	while ((c = getopt(argc, argv, "xw:h:o:s:")) != -1) {
 		switch (c) {
 			case 'o':
 				output = atoi(optarg);
@@ -343,6 +322,9 @@ main(int argc, char **argv)
 			case 'h':
 				height = atoi(optarg);
 				break;
+			case 's':
+				ptsize = atoi(optarg);
+				break;
 			case 'x':
 				exclusive_zone++;
 				break;
@@ -351,8 +333,19 @@ main(int argc, char **argv)
 		}
 	}
 
+	FT_Error error;
+	error = FT_Init_FreeType(&library);	/* initialize library */
+	/* error handling omitted */
+
+	error = FT_New_Face(library, FONTFILE, 0, &face);	/* create face object */
+	/* error handling omitted */
+
+	/* use 50pt at 100dpi */
+	error = FT_Set_Char_Size(face, ptsize << 6, 0, 100, 0);	/* set character size */
+	/* error handling omitted */
+
 	if (!height) {
-		height = TEXTHEIGHT;
+		height = (face->size->metrics.ascender - face->size->metrics.descender) >> 6;
 	}
 
 	display = wl_display_connect(NULL);
@@ -397,6 +390,9 @@ main(int argc, char **argv)
 	while (wl_display_dispatch(display) != -1 && run_display) {
 		// This space intentionally left blank
 	}
+
+	FT_Done_Face(face);
+	FT_Done_FreeType(library);
 
 	return 0;
 }

@@ -11,13 +11,10 @@
 #include <wayland-client.h>
 #include <wayland-cursor.h>
 #include <wayland-egl.h>
-#include <wlr/render/egl.h>
 #include <wlr/util/log.h>
+#include "egl_common.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
-
-#include <ft2build.h>
-#include FT_FREETYPE_H
 
 #define FONTFILE "/usr/share/fonts/OTF/FantasqueSansMono-Regular.otf"
 #define PTSIZE 50
@@ -37,7 +34,6 @@ struct zwlr_layer_surface_v1 *layer_surface;
 static struct wl_output *wl_output;
 
 struct wl_surface *wl_surface;
-struct wlr_egl egl;
 struct wl_egl_window *egl_window;
 struct wlr_egl_surface *egl_surface;
 struct wl_callback *frame_callback;
@@ -77,30 +73,9 @@ static struct wl_callback_listener frame_listener = {
 };
 
 static void
-draw_bitmap(FT_Bitmap * bitmap, FT_Int x, FT_Int y)
-{
-	FT_Int i, j, p, q;
-	FT_Int x_max = x + bitmap->width;
-	FT_Int y_max = y + bitmap->rows;
-
-
-	/* for simplicity, we assume that `bitmap->pixel_mode' */
-	/* is `FT_PIXEL_MODE_GRAY' (i.e., not a bitmap font)   */
-
-	for (i = x, p = 0; i < x_max; i++, p++) {
-		for (j = y, q = 0; j < y_max; j++, q++) {
-			if (i < 0 || j < 0 || i >= width || j >= height)
-				continue;
-
-			image[j][i] |= bitmap->buffer[q * bitmap->width + p];
-		}
-	}
-}
-
-static void
 draw(void)
 {
-	eglMakeCurrent(egl.display, egl_surface, egl_surface, egl.context);
+	eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 
@@ -131,69 +106,6 @@ draw(void)
 	}
 	glClear(GL_COLOR_BUFFER_BIT);
 
-
-	// font stuff
-	FT_Library library;
-	FT_Face face;
-
-	FT_GlyphSlot slot;
-	FT_Vector pen;		/* untransformed origin  */
-	FT_Error error;
-
-	char *filename;
-	char *text;
-
-	int points;
-	int target_height;
-	int n, num_chars;
-
-
-	filename = FONTFILE;
-	text = TEXT;
-	points = PTSIZE;
-	num_chars = strlen(text);
-	target_height = HEIGHT;
-
-	error = FT_Init_FreeType(&library);	/* initialize library */
-	/* error handling omitted */
-
-	error = FT_New_Face(library, filename, 0, &face);	/* create face object */
-	/* error handling omitted */
-
-	/* use 50pt at 100dpi */
-	error = FT_Set_Char_Size(face, points * 64, 0, 100, 0);	/* set character size */
-	/* error handling omitted */
-
-	/* cmap selection omitted;                                        */
-	/* for simplicity we assume that the font contains a Unicode cmap */
-
-	slot = face->glyph;
-
-	/* the pen position in 26.6 cartesian space coordinates; */
-	/* start at (300,200) relative to the upper left corner  */
-	pen.x = 300 * 64;
-	pen.y = (target_height - 200) * 64;
-
-	for (n = 0; n < num_chars; n++) {
-		/* set transformation */
-		FT_Set_Transform(face, NULL, &pen);
-
-		/* load glyph image into the slot (erase previous one) */
-		error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
-		if (error)
-			continue;	/* ignore errors */
-
-		/* now, draw to our target surface (convert position) */
-		draw_bitmap(&slot->bitmap,
-				slot->bitmap_left,
-				target_height - slot->bitmap_top);
-
-		/* increment pen position */
-		pen.x += slot->advance.x;
-		pen.y += slot->advance.y;
-	}
-
-
 	if (cur_x != -1 && cur_y != -1) {
 		glEnable(GL_SCISSOR_TEST);
 		glScissor(cur_x, height - cur_y, 5, 5);
@@ -205,12 +117,9 @@ draw(void)
 	frame_callback = wl_surface_frame(wl_surface);
 	wl_callback_add_listener(frame_callback, &frame_listener, NULL);
 
-	eglSwapBuffers(egl.display, egl_surface);
+	eglSwapBuffers(egl_display, egl_surface);
 
 	demo.last_frame = ts;
-
-	FT_Done_Face(face);
-	FT_Done_FreeType(library);
 }
 
 static void
@@ -241,7 +150,7 @@ layer_surface_configure(void *data,
 static void
 layer_surface_closed(void *data, struct zwlr_layer_surface_v1 *surface)
 {
-	wlr_egl_destroy_surface(&egl, egl_surface);
+	eglDestroySurface(egl_display, egl_surface);
 	wl_egl_window_destroy(egl_window);
 	zwlr_layer_surface_v1_destroy(surface);
 	wl_surface_destroy(wl_surface);
@@ -544,9 +453,7 @@ main(int argc, char **argv)
 	cursor_surface = wl_compositor_create_surface(compositor);
 	assert(cursor_surface);
 
-	EGLint attribs[] = { EGL_ALPHA_SIZE, 8, EGL_NONE };
-	wlr_egl_init(&egl, EGL_PLATFORM_WAYLAND_EXT, display,
-			attribs, WL_SHM_FORMAT_ARGB8888);
+	egl_init(display);
 
 	wl_surface = wl_compositor_create_surface(compositor);
 	assert(wl_surface);
@@ -565,8 +472,9 @@ main(int argc, char **argv)
 
 	egl_window = wl_egl_window_create(wl_surface, width, height);
 	assert(egl_window);
-	egl_surface = wlr_egl_create_surface(&egl, egl_window);
-	assert(egl_surface);
+	egl_surface = eglCreatePlatformWindowSurfaceEXT(
+		egl_display, egl_config, egl_window, NULL);
+	assert(egl_surface != EGL_NO_SURFACE);
 
 	wl_display_roundtrip(display);
 	draw();

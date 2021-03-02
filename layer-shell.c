@@ -1,25 +1,34 @@
 #define _POSIX_C_SOURCE 200112L
 #include <linux/input-event-codes.h>
 #include <assert.h>
+#include <fcntl.h>
 #include <GLES2/gl2.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
-#include <wayland-cursor.h>
-#include <wayland-egl.h>
 #include <wlr/util/log.h>
-#include "egl_common.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
 #define FONTFILE "/usr/share/fonts/OTF/FantasqueSansMono-Regular.otf"
-#define PTSIZE 50
+#define PTSIZE 18
 #define TEXT "hello world"
-#define TEXT_HEIGHT 24
+#define TEXTHEIGHT 24
+#define BASE 200
+#define LEFT 10
+
+// Text color
+#define RED 200
+#define GRN 240
+#define BLU 120
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
@@ -34,8 +43,6 @@ struct zwlr_layer_surface_v1 *layer_surface;
 static struct wl_output *wl_output;
 
 struct wl_surface *wl_surface;
-struct wl_egl_window *egl_window;
-struct wlr_egl_surface *egl_surface;
 struct wl_callback *frame_callback;
 
 static uint32_t output = UINT32_MAX;
@@ -44,13 +51,9 @@ static uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
 static uint32_t anchor = 0;
 static uint32_t width = 0, height = 0;
 static bool run_display = true;
-static bool animate = false;
 static double frame = 0;
 static int cur_x = -1, cur_y = -1;
 static int buttons = 0;
-
-struct wl_cursor_image *cursor_image;
-struct wl_surface *cursor_surface, *input_surface;
 
 static struct {
 	struct timespec last_frame;
@@ -58,68 +61,190 @@ static struct {
 	int dec;
 } demo;
 
-static void draw(void);
-
 static void
-surface_frame_callback(void *data, struct wl_callback *cb, uint32_t time)
+wl_buffer_release(void *data, struct wl_buffer *wl_buffer)
 {
-	wl_callback_destroy(cb);
-	frame_callback = NULL;
-	draw();
+	/* Sent by the compositor when it's no longer using this buffer */
+	wl_buffer_destroy(wl_buffer);
 }
 
-static struct wl_callback_listener frame_listener = {
-	.done = surface_frame_callback
+static const struct wl_buffer_listener wl_buffer_listener = {
+	.release = wl_buffer_release,
 };
 
+/* Shared memory support code */
 static void
-draw(void)
+randname(char *buf)
 {
-	eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
 	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
+	clock_gettime(CLOCK_REALTIME, &ts);
+	long r = ts.tv_nsec;
+	for (int i = 0; i < 6; ++i) {
+		buf[i] = 'A' + (r & 15) + (r & 16) * 2;
+		r >>= 5;
+	}
+}
 
-	long ms = (ts.tv_sec - demo.last_frame.tv_sec) * 1000 +
-			(ts.tv_nsec - demo.last_frame.tv_nsec) / 1000000;
-	int inc = (demo.dec + 1) % 3;
+static int
+create_shm_file(void)
+{
+	int retries = 100;
+	do {
+		char name[] = "/wl_shm-XXXXXX";
+		randname(name + sizeof(name) - 7);
+		--retries;
+		int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+		if (fd >= 0) {
+			shm_unlink(name);
+			return fd;
+		}
+	} while (retries > 0 && errno == EEXIST);
+	return -1;
+}
 
-	if (!buttons) {
-		demo.color[inc] += ms / 2000.0f;
-		demo.color[demo.dec] -= ms / 2000.0f;
+static int
+allocate_shm_file(size_t size)
+{
+	int fd = create_shm_file();
+	if (fd < 0)
+		return -1;
+	int ret;
+	do {
+		ret = ftruncate(fd, size);
+	} while (ret < 0 && errno == EINTR);
+	if (ret < 0) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
 
-		if (demo.color[demo.dec] < 0.0f) {
-			demo.color[inc] = 1.0f;
-			demo.color[demo.dec] = 0.0f;
-			demo.dec = inc;
+void
+draw_bitmap(uint32_t buffer[][width], FT_Bitmap * bitmap, FT_Int x, FT_Int y)
+{
+	FT_Int i, j, p, q;
+	FT_Int x_max = x + bitmap->width;
+	FT_Int y_max = y + bitmap->rows;
+
+
+	/* for simplicity, we assume that `bitmap->pixel_mode' */
+	/* is `FT_PIXEL_MODE_GRAY' (i.e., not a bitmap font)   */
+
+	for (i = x, p = 0; i < x_max; i++, p++) {
+		for (j = y, q = 0; j < y_max; j++, q++) {
+			if (i < 0 || j < 0 || i >= width || j >= height)
+				continue;
+
+			uint32_t gray = bitmap->buffer[q * bitmap->width + p];
+			uint32_t red = (gray * RED + 128) / 256;
+			uint32_t grn = (gray * GRN + 128) / 256;
+			uint32_t blu = (gray * BLU + 128) / 256;
+			buffer[j][i] = red << 16 | grn << 8 | blu;
 		}
 	}
+}
 
-	if (animate) {
-		frame += ms / 50.0;
+static struct wl_buffer *
+draw_frame(void)
+{
+	int stride = width * 4;
+	int size = stride * height;
+
+	int fd = allocate_shm_file(size);
+	if (fd == -1) {
+		return NULL;
 	}
 
-	glViewport(0, 0, width, height);
-	if (buttons) {
-		glClearColor(1, 1, 1, 1);
-	} else {
-		glClearColor(demo.color[0], demo.color[1], demo.color[2], 1);
-	}
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	if (cur_x != -1 && cur_y != -1) {
-		glEnable(GL_SCISSOR_TEST);
-		glScissor(cur_x, height - cur_y, 5, 5);
-		glClearColor(0, 0, 0, 1);
-		glClear(GL_COLOR_BUFFER_BIT);
-		glDisable(GL_SCISSOR_TEST);
+	uint32_t *data = mmap(NULL, size,
+			PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (data == MAP_FAILED) {
+		close(fd);
+		return NULL;
 	}
 
-	frame_callback = wl_surface_frame(wl_surface);
-	wl_callback_add_listener(frame_callback, &frame_listener, NULL);
+	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, size);
+	struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
+			width, height, stride, WL_SHM_FORMAT_XRGB8888);
+	wl_shm_pool_destroy(pool);
+	close(fd);
 
-	eglSwapBuffers(egl_display, egl_surface);
+	FT_Library library;
+	FT_Face face;
 
-	demo.last_frame = ts;
+	FT_GlyphSlot slot;
+	FT_Vector pen;		/* untransformed origin  */
+	FT_Error error;
+
+	char *filename;
+	char *text;
+
+	int points;
+	int target_height;
+	int n, num_chars;
+
+
+	filename = FONTFILE;
+	text = TEXT;
+	points = PTSIZE;
+	num_chars = strlen(text);
+	target_height = TEXTHEIGHT;
+
+	error = FT_Init_FreeType(&library);	/* initialize library */
+	/* error handling omitted */
+
+	error = FT_New_Face(library, filename, 0, &face);	/* create face object */
+	/* error handling omitted */
+
+	/* use 50pt at 100dpi */
+	error = FT_Set_Char_Size(face, points * 64, 0, 100, 0);	/* set character size */
+	/* error handling omitted */
+
+	/* cmap selection omitted;                                        */
+	/* for simplicity we assume that the font contains a Unicode cmap */
+
+	slot = face->glyph;
+
+	/* the pen position in 26.6 cartesian space coordinates; */
+	/* start at (300,200) relative to the upper left corner  */
+	pen.x = LEFT * 64;
+	pen.y = 0; //(target_height - BASE) * 64;
+
+	for (n = 0; n < num_chars; n++) {
+		/* set transformation */
+		FT_Set_Transform(face, NULL, &pen);
+
+		/* load glyph image into the slot (erase previous one) */
+		error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
+		if (error)
+			continue;	/* ignore errors */
+
+		/* now, draw to our target surface (convert position) */
+		draw_bitmap(data, &slot->bitmap,
+				slot->bitmap_left,
+				target_height - slot->bitmap_top);
+
+		/* increment pen position */
+		pen.x += slot->advance.x;
+		pen.y += slot->advance.y;
+	}
+
+	FT_Done_Face(face);
+	FT_Done_FreeType(library);
+
+
+/* 	/1* Draw checkerboxed background *1/ */
+/* 	for (int y = 0; y < height; ++y) { */
+/* 		for (int x = 0; x < width; ++x) { */
+/* 			if ((x + y / 8 * 8) % 16 < 8) */
+/* 				data[y * width + x] = 0xFF666666; */
+/* 			else */
+/* 				data[y * width + x] = 0xFFEEEEEE; */
+/* 		} */
+/* 	} */
+
+	munmap(data, size);
+	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
+	return buffer;
 }
 
 static void
@@ -141,17 +266,16 @@ layer_surface_configure(void *data,
 	width = w;
 	height = h;
 	wlr_log(WLR_DEBUG, "configure %ux%u", w, h);
-	if (egl_window) {
-		wl_egl_window_resize(egl_window, width, height, 0, 0);
-	}
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
+
+	struct wl_buffer *buffer = draw_frame();
+	wl_surface_attach(wl_surface, buffer, 0, 0);
+	wl_surface_commit(wl_surface);
 }
 
 static void
 layer_surface_closed(void *data, struct zwlr_layer_surface_v1 *surface)
 {
-	eglDestroySurface(egl_display, egl_surface);
-	wl_egl_window_destroy(egl_window);
 	zwlr_layer_surface_v1_destroy(surface);
 	wl_surface_destroy(wl_surface);
 	run_display = false;
@@ -160,99 +284,6 @@ layer_surface_closed(void *data, struct zwlr_layer_surface_v1 *surface)
 struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 	.configure = layer_surface_configure,
 	.closed = layer_surface_closed,
-};
-
-static void
-wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
-		uint32_t serial, struct wl_surface *surface,
-		wl_fixed_t surface_x, wl_fixed_t surface_y)
-{
-	struct wl_cursor_image *image;
-	image = cursor_image;
-	wl_surface_attach(cursor_surface,
-			wl_cursor_image_get_buffer(image), 0, 0);
-	wl_surface_damage(cursor_surface, 1, 0, image->width, image->height);
-	wl_surface_commit(cursor_surface);
-	wl_pointer_set_cursor(wl_pointer, serial, cursor_surface,
-			image->hotspot_x, image->hotspot_y);
-	input_surface = surface;
-}
-
-static void
-wl_pointer_leave(void *data, struct wl_pointer *wl_pointer,
-		uint32_t serial, struct wl_surface *surface)
-{
-	cur_x = cur_y = -1;
-	buttons = 0;
-}
-
-static void
-wl_pointer_motion(void *data, struct wl_pointer *wl_pointer,
-		uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y)
-{
-	cur_x = wl_fixed_to_int(surface_x);
-	cur_y = wl_fixed_to_int(surface_y);
-}
-
-static void
-wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
-		uint32_t serial, uint32_t time, uint32_t button, uint32_t state)
-{
-	if (input_surface == wl_surface) {
-		if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
-			buttons++;
-		} else {
-			buttons--;
-		}
-	} else {
-		assert(false && "Unknown surface");
-	}
-}
-
-static void
-wl_pointer_axis(void *data, struct wl_pointer *wl_pointer,
-		uint32_t time, uint32_t axis, wl_fixed_t value)
-{
-	// Who cares
-}
-
-static void
-wl_pointer_frame(void *data, struct wl_pointer *wl_pointer)
-{
-	// Who cares
-}
-
-static void
-wl_pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
-		uint32_t axis_source)
-{
-	// Who cares
-}
-
-static void
-wl_pointer_axis_stop(void *data, struct wl_pointer *wl_pointer,
-		uint32_t time, uint32_t axis)
-{
-	// Who cares
-}
-
-static void
-wl_pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
-		uint32_t axis, int32_t discrete)
-{
-	// Who cares
-}
-
-struct wl_pointer_listener pointer_listener = {
-	.enter = wl_pointer_enter,
-	.leave = wl_pointer_leave,
-	.motion = wl_pointer_motion,
-	.button = wl_pointer_button,
-	.axis = wl_pointer_axis,
-	.frame = wl_pointer_frame,
-	.axis_source = wl_pointer_axis_source,
-	.axis_stop = wl_pointer_axis_stop,
-	.axis_discrete = wl_pointer_axis_discrete,
 };
 
 static void
@@ -312,10 +343,6 @@ static void
 seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 		enum wl_seat_capability caps)
 {
-	if ((caps & WL_SEAT_CAPABILITY_POINTER)) {
-		pointer = wl_seat_get_pointer(wl_seat);
-		wl_pointer_add_listener(pointer, &pointer_listener, NULL);
-	}
 	if ((caps & WL_SEAT_CAPABILITY_KEYBOARD)) {
 		keyboard = wl_seat_get_keyboard(wl_seat);
 		wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
@@ -384,7 +411,7 @@ main(int argc, char **argv)
 	anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-	while ((c = getopt(argc, argv, "nxw:h:o:")) != -1) {
+	while ((c = getopt(argc, argv, "xw:h:o:")) != -1) {
 		switch (c) {
 			case 'o':
 				output = atoi(optarg);
@@ -398,16 +425,13 @@ main(int argc, char **argv)
 			case 'x':
 				exclusive_zone++;
 				break;
-			case 'n':
-				animate = true;
-				break;
 			default:
 				break;
 		}
 	}
 
 	if (!height) {
-		height = TEXT_HEIGHT;
+		height = TEXTHEIGHT;
 	}
 
 	display = wl_display_connect(NULL);
@@ -433,28 +457,6 @@ main(int argc, char **argv)
 		return 1;
 	}
 
-	struct wl_cursor_theme *cursor_theme =
-			wl_cursor_theme_load(NULL, 16, shm);
-	assert(cursor_theme);
-	struct wl_cursor *cursor =
-			wl_cursor_theme_get_cursor(cursor_theme, "crosshair");
-	if (cursor == NULL) {
-		cursor = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
-	}
-	assert(cursor);
-	cursor_image = cursor->images[0];
-
-	cursor = wl_cursor_theme_get_cursor(cursor_theme, "tcross");
-	if (cursor == NULL) {
-		cursor = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
-	}
-	assert(cursor);
-
-	cursor_surface = wl_compositor_create_surface(compositor);
-	assert(cursor_surface);
-
-	egl_init(display);
-
 	wl_surface = wl_compositor_create_surface(compositor);
 	assert(wl_surface);
 
@@ -468,21 +470,12 @@ main(int argc, char **argv)
 	zwlr_layer_surface_v1_add_listener(layer_surface,
 			&layer_surface_listener, layer_surface);
 	wl_surface_commit(wl_surface);
-	wl_display_roundtrip(display);
-
-	egl_window = wl_egl_window_create(wl_surface, width, height);
-	assert(egl_window);
-	egl_surface = eglCreatePlatformWindowSurfaceEXT(
-		egl_display, egl_config, egl_window, NULL);
-	assert(egl_surface != EGL_NO_SURFACE);
 
 	wl_display_roundtrip(display);
-	draw();
 
 	while (wl_display_dispatch(display) != -1 && run_display) {
 		// This space intentionally left blank
 	}
 
-	wl_cursor_theme_destroy(cursor_theme);
 	return 0;
 }

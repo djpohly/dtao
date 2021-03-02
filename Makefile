@@ -41,3 +41,5 @@ way: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o
 way: -lrt
 
 layer-shell: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o egl_common.o
+
+layer-shell: -lrt

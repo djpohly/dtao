@@ -13,27 +13,19 @@
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
+#include <fcft/fcft.h>
+#include <pixman.h>
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
-#include <ft2build.h>
-#include FT_FREETYPE_H
-
-#define FONTFILE "/usr/share/fonts/OTF/FantasqueSansMono-Regular.otf"
 #define TEXT "howdy world"
-#define TEXTHEIGHT 24
-#define BASE 200
 
 // Text color
-#define RED 200
-#define GRN 240
-#define BLU 120
+static pixman_image_t *fgcolor;
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
-static struct wl_pointer *pointer;
-static struct wl_keyboard *keyboard;
 static struct xdg_wm_base *xdg_wm_base;
 static struct zwlr_layer_shell_v1 *layer_shell;
 
@@ -49,19 +41,8 @@ static uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
 static uint32_t anchor = 0;
 static uint32_t width = 0, height = 0;
 static bool run_display = true;
-static double frame = 0;
-static int cur_x = -1, cur_y = -1;
-static int buttons = 0;
-static int ptsize = 16;
 
-static FT_Library library;
-static FT_Face face;
-
-static struct {
-	struct timespec last_frame;
-	float color[3];
-	int dec;
-} demo;
+static struct fcft_font *font;
 
 static void
 wl_buffer_release(void *data, struct wl_buffer *wl_buffer)
@@ -121,31 +102,6 @@ allocate_shm_file(size_t size)
 	return fd;
 }
 
-void
-draw_bitmap(uint32_t buffer[][width], FT_Bitmap * bitmap, FT_Int x, FT_Int y)
-{
-	FT_Int i, j, p, q;
-	FT_Int x_max = x + bitmap->width;
-	FT_Int y_max = y + bitmap->rows;
-
-
-	/* for simplicity, we assume that `bitmap->pixel_mode' */
-	/* is `FT_PIXEL_MODE_GRAY' (i.e., not a bitmap font)   */
-
-	for (i = x, p = 0; i < x_max; i++, p++) {
-		for (j = y, q = 0; j < y_max; j++, q++) {
-			if (i < 0 || j < 0 || i >= width || j >= height)
-				continue;
-
-			uint32_t gray = bitmap->buffer[q * bitmap->width + p];
-			uint32_t red = (gray * RED + 128) / 256;
-			uint32_t grn = (gray * GRN + 128) / 256;
-			uint32_t blu = (gray * BLU + 128) / 256;
-			buffer[j][i] = red << 16 | grn << 8 | blu;
-		}
-	}
-}
-
 static struct wl_buffer *
 draw_frame(void)
 {
@@ -170,9 +126,8 @@ draw_frame(void)
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
-	FT_GlyphSlot slot;
-	FT_Vector pen;		/* untransformed origin  */
-	FT_Error error;
+	pixman_image_t *canvas = pixman_image_create_bits(PIXMAN_x8r8g8b8,
+			width, height, data, width * 4);
 
 	char *text;
 
@@ -185,57 +140,49 @@ draw_frame(void)
 	/* cmap selection omitted;                                        */
 	/* for simplicity we assume that the font contains a Unicode cmap */
 
-	slot = face->glyph;
+	fgcolor = pixman_image_create_solid_fill(
+			&(pixman_color_t){
+				.red = 0xd000,
+				.green = 0xe800,
+				.blue = 0x4000,
+				.alpha = 0xffff,
+			});
 
-	/* the pen position in 26.6 cartesian space coordinates; */
-	pen.x = 0;
-	pen.y = -face->size->metrics.descender;
+	int xpos = 0, ypos = 0;
 
 	for (n = 0; n < num_chars; n++) {
-		/* set transformation */
-		FT_Set_Transform(face, NULL, &pen);
+		const struct fcft_glyph *glyph = fcft_glyph_rasterize(
+				font, text[n], FCFT_SUBPIXEL_DEFAULT);
+		if (!glyph)
+			continue;
+		long x_kern = 0;
+		if (n > 0)
+			fcft_kerning(font, text[n - 1], text[n], &x_kern, NULL);
+		xpos += x_kern;
 
-		/* load glyph image into the slot (erase previous one) */
-		error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
-		if (error)
-			continue;	/* ignore errors */
-
-		/* now, draw to our target surface (convert position) */
-		draw_bitmap(data, &slot->bitmap,
-				slot->bitmap_left,
-				height - slot->bitmap_top);
+		if (pixman_image_get_format(glyph->pix) == PIXMAN_a8r8g8b8) {
+			pixman_image_composite32(
+				PIXMAN_OP_OVER, glyph->pix, NULL, canvas, 0, 0, 0, 0,
+				xpos + glyph->x, ypos + font->ascent - glyph->y,
+				glyph->width, glyph->height);
+		} else {
+			pixman_image_composite32(
+				PIXMAN_OP_OVER, fgcolor, glyph->pix, canvas, 0, 0, 0, 0,
+				xpos + glyph->x, ypos + font->ascent - glyph->y,
+				glyph->width, glyph->height);
+		}
 
 		/* increment pen position */
-		pen.x += slot->advance.x;
-		pen.y += slot->advance.y;
+		xpos += glyph->advance.x;
+		ypos += glyph->advance.y;
 	}
 
-
-/* 	/1* Draw checkerboxed background *1/ */
-/* 	for (int y = 0; y < height; ++y) { */
-/* 		for (int x = 0; x < width; ++x) { */
-/* 			if ((x + y / 8 * 8) % 16 < 8) */
-/* 				data[y * width + x] = 0xFF666666; */
-/* 			else */
-/* 				data[y * width + x] = 0xFFEEEEEE; */
-/* 		} */
-/* 	} */
-
+	pixman_image_unref(canvas);
+	pixman_image_unref(fgcolor);
 	munmap(data, size);
 	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
 	return buffer;
 }
-
-static void
-xdg_surface_handle_configure(void *data,
-		struct xdg_surface *xdg_surface, uint32_t serial)
-{
-	xdg_surface_ack_configure(xdg_surface, serial);
-}
-
-static const struct xdg_surface_listener xdg_surface_listener = {
-	.configure = xdg_surface_handle_configure,
-};
 
 static void
 layer_surface_configure(void *data,
@@ -304,14 +251,14 @@ int
 main(int argc, char **argv)
 {
 	char *namespace = "wlroots";
+	char *fontstr = "";
 	int exclusive_zone = -1;
-	bool found;
 	int c;
 	layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
 	anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-	while ((c = getopt(argc, argv, "xw:h:o:s:")) != -1) {
+	while ((c = getopt(argc, argv, "xw:h:o:f:")) != -1) {
 		switch (c) {
 			case 'o':
 				output = atoi(optarg);
@@ -322,30 +269,28 @@ main(int argc, char **argv)
 			case 'h':
 				height = atoi(optarg);
 				break;
-			case 's':
-				ptsize = atoi(optarg);
-				break;
 			case 'x':
 				exclusive_zone++;
+				break;
+			case 'f':
+				fontstr = optarg;
 				break;
 			default:
 				break;
 		}
 	}
 
-	FT_Error error;
-	error = FT_Init_FreeType(&library);	/* initialize library */
-	/* error handling omitted */
-
-	error = FT_New_Face(library, FONTFILE, 0, &face);	/* create face object */
-	/* error handling omitted */
-
-	/* use 50pt at 100dpi */
-	error = FT_Set_Char_Size(face, ptsize << 6, 0, 100, 0);	/* set character size */
-	/* error handling omitted */
+	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
+	font = fcft_from_name(1, (const char *[]) {fontstr}, NULL);
+	if (!font) {
+		fprintf(stderr, "error in fcft_from_name\n");
+		return 1;
+	}
 
 	if (!height) {
-		height = (face->size->metrics.ascender - face->size->metrics.descender) >> 6;
+		height = font->ascent + font->descent;
+		fprintf(stderr, "height = %d + %d = %d\n", font->ascent,
+				font->descent, height);
 	}
 
 	display = wl_display_connect(NULL);
@@ -379,8 +324,12 @@ main(int argc, char **argv)
 	assert(layer_surface);
 	zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 	zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);
-	zwlr_layer_surface_v1_set_exclusive_zone(layer_surface,
-			exclusive_zone <= 0 ? exclusive_zone : height);
+	if (exclusive_zone > 0) {
+		zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, height);
+	} else {
+		zwlr_layer_surface_v1_set_exclusive_zone(layer_surface,
+				exclusive_zone);
+	}
 	zwlr_layer_surface_v1_add_listener(layer_surface,
 			&layer_surface_listener, layer_surface);
 	wl_surface_commit(wl_surface);
@@ -391,8 +340,7 @@ main(int argc, char **argv)
 		// This space intentionally left blank
 	}
 
-	FT_Done_Face(face);
-	FT_Done_FreeType(library);
+	fcft_destroy(font);
 
 	return 0;
 }

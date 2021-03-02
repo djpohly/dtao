@@ -1,4 +1,4 @@
-BINS = ft way dtao
+BINS = dtao
 
 CFLAGS += -Wall -Wextra -Wno-unused-parameter
 
@@ -31,13 +31,8 @@ wlr-layer-shell-unstable-v1-protocol.c:
 wlr-layer-shell-unstable-v1-protocol.o: wlr-layer-shell-unstable-v1-protocol.h
 
 # Protocol dependencies
-way: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o
 dtao: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o
 
 # Library dependencies
-way: CFLAGS+=$(shell pkg-config --cflags freetype2 wayland-client)
-way: LDLIBS+=$(shell pkg-config --libs freetype2 wayland-client) -lrt
 dtao: CFLAGS+=$(shell pkg-config --cflags freetype2 wayland-client fcft pixman-1)
 dtao: LDLIBS+=$(shell pkg-config --libs freetype2 wayland-client fcft pixman-1) -lrt
-ft: CFLAGS+=$(shell pkg-config --cflags freetype2)
-ft: LDLIBS+=$(shell pkg-config --libs freetype2)

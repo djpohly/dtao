@@ -1,5 +1,5 @@
-BINS = ft way
-DEPS = freetype2 wayland-client wayland-egl egl gl
+BINS = ft way layer-shell
+DEPS = freetype2 wayland-client wayland-egl wayland-cursor egl gl pixman-1 wlroots
 
 all: $(BINS)
 
@@ -8,6 +8,8 @@ clean:
 
 CFLAGS += $(shell pkg-config --cflags $(DEPS))
 LDLIBS += $(shell pkg-config --libs $(DEPS))
+
+CPPFLAGS += -DWLR_USE_UNSTABLE
 
 WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
@@ -37,3 +39,5 @@ way.o: xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h
 way: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o
 
 way: -lrt
+
+layer-shell: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o

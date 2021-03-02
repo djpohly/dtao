@@ -129,16 +129,9 @@ draw_frame(void)
 	pixman_image_t *canvas = pixman_image_create_bits(PIXMAN_x8r8g8b8,
 			width, height, data, width * 4);
 
-	char *text;
+	char *text = TEXT;
 
-	int n, num_chars;
-
-
-	text = TEXT;
-	num_chars = strlen(text);
-
-	/* cmap selection omitted;                                        */
-	/* for simplicity we assume that the font contains a Unicode cmap */
+	int n;
 
 	fgcolor = pixman_image_create_solid_fill(
 			&(pixman_color_t){
@@ -150,7 +143,7 @@ draw_frame(void)
 
 	int xpos = 0, ypos = 0;
 
-	for (n = 0; n < num_chars; n++) {
+	for (n = 0; text[n]; n++) {
 		const struct fcft_glyph *glyph = fcft_glyph_rasterize(
 				font, text[n], FCFT_SUBPIXEL_DEFAULT);
 		if (!glyph)

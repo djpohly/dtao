@@ -1,17 +1,18 @@
 #define _POSIX_C_SOURCE 200112L
 #include <linux/input-event-codes.h>
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <GLES2/gl2.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
-#include <wlr/util/log.h>
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
@@ -32,7 +33,6 @@
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
-static struct wl_seat *seat;
 static struct wl_shm *shm;
 static struct wl_pointer *pointer;
 static struct wl_keyboard *keyboard;
@@ -265,7 +265,6 @@ layer_surface_configure(void *data,
 {
 	width = w;
 	height = h;
-	wlr_log(WLR_DEBUG, "configure %ux%u", w, h);
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
 	struct wl_buffer *buffer = draw_frame();
@@ -287,80 +286,6 @@ struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 };
 
 static void
-wl_keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t format, int32_t fd, uint32_t size)
-{
-	// Who cares
-}
-
-static void
-wl_keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t serial, struct wl_surface *surface,
-		struct wl_array *keys)
-{
-	wlr_log(WLR_DEBUG, "Keyboard enter");
-}
-
-static void
-wl_keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t serial, struct wl_surface *surface)
-{
-	wlr_log(WLR_DEBUG, "Keyboard leave");
-}
-
-static void
-wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t serial, uint32_t time, uint32_t key, uint32_t state)
-{
-	wlr_log(WLR_DEBUG, "Key event: %d %d", key, state);
-}
-
-static void
-wl_keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched,
-		uint32_t mods_locked, uint32_t group)
-{
-	// Who cares
-}
-
-static void
-wl_keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
-		int32_t rate, int32_t delay)
-{
-	// Who cares
-}
-
-static struct wl_keyboard_listener keyboard_listener = {
-	.keymap = wl_keyboard_keymap,
-	.enter = wl_keyboard_enter,
-	.leave = wl_keyboard_leave,
-	.key = wl_keyboard_key,
-	.modifiers = wl_keyboard_modifiers,
-	.repeat_info = wl_keyboard_repeat_info,
-};
-
-static void
-seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
-		enum wl_seat_capability caps)
-{
-	if ((caps & WL_SEAT_CAPABILITY_KEYBOARD)) {
-		keyboard = wl_seat_get_keyboard(wl_seat);
-		wl_keyboard_add_listener(keyboard, &keyboard_listener, NULL);
-	}
-}
-
-static void
-seat_handle_name(void *data, struct wl_seat *wl_seat, const char *name)
-{
-	// Who cares
-}
-
-const struct wl_seat_listener seat_listener = {
-	.capabilities = seat_handle_capabilities,
-	.name = seat_handle_name,
-};
-
-static void
 handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version)
 {
@@ -378,9 +303,6 @@ handle_global(void *data, struct wl_registry *registry,
 				output--;
 			}
 		}
-	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
-		seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
-		wl_seat_add_listener(seat, &seat_listener, NULL);
 	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
 		layer_shell = wl_registry_bind(registry, name,
 				&zwlr_layer_shell_v1_interface, 1);
@@ -402,7 +324,6 @@ static const struct wl_registry_listener registry_listener = {
 int
 main(int argc, char **argv)
 {
-	wlr_log_init(WLR_DEBUG, NULL);
 	char *namespace = "wlroots";
 	int exclusive_zone = -1;
 	bool found;

@@ -1,15 +1,9 @@
 BINS = ft way layer-shell
-DEPS = freetype2 wayland-client wayland-egl wayland-cursor egl gl pixman-1 wlroots
 
 all: $(BINS)
 
 clean:
 	$(RM) $(BINS)
-
-CFLAGS += $(shell pkg-config --cflags $(DEPS))
-LDLIBS += $(shell pkg-config --libs $(DEPS))
-
-CPPFLAGS += -DWLR_USE_UNSTABLE
 
 WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)
@@ -34,12 +28,14 @@ wlr-layer-shell-unstable-v1-protocol.c:
 
 wlr-layer-shell-unstable-v1-protocol.o: wlr-layer-shell-unstable-v1-protocol.h
 
-way.o: xdg-shell-protocol.h wlr-layer-shell-unstable-v1-protocol.h
-
+# Protocol dependencies
 way: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o
+layer-shell: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o
 
-way: -lrt
-
-layer-shell: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o egl_common.o
-
-layer-shell: -lrt
+# Library dependencies
+way: CFLAGS+=$(shell pkg-config --cflags freetype2 wayland-client)
+way: LDLIBS+=$(shell pkg-config --libs freetype2 wayland-client) -lrt
+layer-shell: CFLAGS+=$(shell pkg-config --cflags freetype2 wayland-client)
+layer-shell: LDLIBS+=$(shell pkg-config --libs freetype2 wayland-client) -lrt
+ft: CFLAGS+=$(shell pkg-config --cflags freetype2)
+ft: LDLIBS+=$(shell pkg-config --libs freetype2)

@@ -1,6 +1,6 @@
 /* example1.c                                                      */
 /*                                                                 */
-/* This small program shows how to print a rotated string with the */
+/* This small program shows how to print a string with the */
 /* FreeType 2 library.                                             */
 
 
@@ -10,6 +10,10 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+
+#define FONTFILE "/usr/share/fonts/OTF/FantasqueSansMono-Regular.otf"
+#define PTSIZE 50
+#define TEXT "hello world"
 
 
 #define WIDTH   640
@@ -67,8 +71,7 @@ show_image( void )
 
 
 int
-main( int     argc,
-      char**  argv )
+main( void )
 {
   FT_Library    library;
   FT_Face       face;
@@ -80,21 +83,15 @@ main( int     argc,
   char*         filename;
   char*         text;
 
-  double        angle;
+  int           points;
   int           target_height;
   int           n, num_chars;
 
 
-  if ( argc != 3 )
-  {
-    fprintf ( stderr, "usage: %s font sample-text\n", argv[0] );
-    exit( 1 );
-  }
-
-  filename      = argv[1];                           /* first argument     */
-  text          = argv[2];                           /* second argument    */
+  filename      = FONTFILE;
+  text          = TEXT;
+  points        = PTSIZE;
   num_chars     = strlen( text );
-  angle         = ( 25.0 / 360 ) * 3.14159 * 2;      /* use 25 degrees     */
   target_height = HEIGHT;
 
   error = FT_Init_FreeType( &library );              /* initialize library */
@@ -104,7 +101,7 @@ main( int     argc,
   /* error handling omitted */
 
   /* use 50pt at 100dpi */
-  error = FT_Set_Char_Size( face, 50 * 64, 0,
+  error = FT_Set_Char_Size( face, points * 64, 0,
                             100, 0 );                /* set character size */
   /* error handling omitted */
 

@@ -16,6 +16,12 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+#define FONTFILE "/usr/share/fonts/OTF/FantasqueSansMono-Regular.otf"
+#define PTSIZE 50
+#define TEXT "hello world"
 #define TEXT_HEIGHT 24
 
 static struct wl_display *display;
@@ -58,8 +64,9 @@ static struct {
 
 static void draw(void);
 
-static void surface_frame_callback(
-		void *data, struct wl_callback *cb, uint32_t time) {
+static void
+surface_frame_callback(void *data, struct wl_callback *cb, uint32_t time)
+{
 	wl_callback_destroy(cb);
 	frame_callback = NULL;
 	draw();
@@ -69,13 +76,36 @@ static struct wl_callback_listener frame_listener = {
 	.done = surface_frame_callback
 };
 
-static void draw(void) {
+static void
+draw_bitmap(FT_Bitmap * bitmap, FT_Int x, FT_Int y)
+{
+	FT_Int i, j, p, q;
+	FT_Int x_max = x + bitmap->width;
+	FT_Int y_max = y + bitmap->rows;
+
+
+	/* for simplicity, we assume that `bitmap->pixel_mode' */
+	/* is `FT_PIXEL_MODE_GRAY' (i.e., not a bitmap font)   */
+
+	for (i = x, p = 0; i < x_max; i++, p++) {
+		for (j = y, q = 0; j < y_max; j++, q++) {
+			if (i < 0 || j < 0 || i >= width || j >= height)
+				continue;
+
+			image[j][i] |= bitmap->buffer[q * bitmap->width + p];
+		}
+	}
+}
+
+static void
+draw(void)
+{
 	eglMakeCurrent(egl.display, egl_surface, egl_surface, egl.context);
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 
 	long ms = (ts.tv_sec - demo.last_frame.tv_sec) * 1000 +
-		(ts.tv_nsec - demo.last_frame.tv_nsec) / 1000000;
+			(ts.tv_nsec - demo.last_frame.tv_nsec) / 1000000;
 	int inc = (demo.dec + 1) % 3;
 
 	if (!buttons) {
@@ -101,6 +131,69 @@ static void draw(void) {
 	}
 	glClear(GL_COLOR_BUFFER_BIT);
 
+
+	// font stuff
+	FT_Library library;
+	FT_Face face;
+
+	FT_GlyphSlot slot;
+	FT_Vector pen;		/* untransformed origin  */
+	FT_Error error;
+
+	char *filename;
+	char *text;
+
+	int points;
+	int target_height;
+	int n, num_chars;
+
+
+	filename = FONTFILE;
+	text = TEXT;
+	points = PTSIZE;
+	num_chars = strlen(text);
+	target_height = HEIGHT;
+
+	error = FT_Init_FreeType(&library);	/* initialize library */
+	/* error handling omitted */
+
+	error = FT_New_Face(library, filename, 0, &face);	/* create face object */
+	/* error handling omitted */
+
+	/* use 50pt at 100dpi */
+	error = FT_Set_Char_Size(face, points * 64, 0, 100, 0);	/* set character size */
+	/* error handling omitted */
+
+	/* cmap selection omitted;                                        */
+	/* for simplicity we assume that the font contains a Unicode cmap */
+
+	slot = face->glyph;
+
+	/* the pen position in 26.6 cartesian space coordinates; */
+	/* start at (300,200) relative to the upper left corner  */
+	pen.x = 300 * 64;
+	pen.y = (target_height - 200) * 64;
+
+	for (n = 0; n < num_chars; n++) {
+		/* set transformation */
+		FT_Set_Transform(face, NULL, &pen);
+
+		/* load glyph image into the slot (erase previous one) */
+		error = FT_Load_Char(face, text[n], FT_LOAD_RENDER);
+		if (error)
+			continue;	/* ignore errors */
+
+		/* now, draw to our target surface (convert position) */
+		draw_bitmap(&slot->bitmap,
+				slot->bitmap_left,
+				target_height - slot->bitmap_top);
+
+		/* increment pen position */
+		pen.x += slot->advance.x;
+		pen.y += slot->advance.y;
+	}
+
+
 	if (cur_x != -1 && cur_y != -1) {
 		glEnable(GL_SCISSOR_TEST);
 		glScissor(cur_x, height - cur_y, 5, 5);
@@ -115,10 +208,15 @@ static void draw(void) {
 	eglSwapBuffers(egl.display, egl_surface);
 
 	demo.last_frame = ts;
+
+	FT_Done_Face(face);
+	FT_Done_FreeType(library);
 }
 
-static void xdg_surface_handle_configure(void *data,
-		struct xdg_surface *xdg_surface, uint32_t serial) {
+static void
+xdg_surface_handle_configure(void *data,
+		struct xdg_surface *xdg_surface, uint32_t serial)
+{
 	xdg_surface_ack_configure(xdg_surface, serial);
 }
 
@@ -126,9 +224,11 @@ static const struct xdg_surface_listener xdg_surface_listener = {
 	.configure = xdg_surface_handle_configure,
 };
 
-static void layer_surface_configure(void *data,
+static void
+layer_surface_configure(void *data,
 		struct zwlr_layer_surface_v1 *surface,
-		uint32_t serial, uint32_t w, uint32_t h) {
+		uint32_t serial, uint32_t w, uint32_t h)
+{
 	width = w;
 	height = h;
 	wlr_log(WLR_DEBUG, "configure %ux%u", w, h);
@@ -138,8 +238,9 @@ static void layer_surface_configure(void *data,
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 }
 
-static void layer_surface_closed(void *data,
-		struct zwlr_layer_surface_v1 *surface) {
+static void
+layer_surface_closed(void *data, struct zwlr_layer_surface_v1 *surface)
+{
 	wlr_egl_destroy_surface(&egl, egl_surface);
 	wl_egl_window_destroy(egl_window);
 	zwlr_layer_surface_v1_destroy(surface);
@@ -152,35 +253,42 @@ struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 	.closed = layer_surface_closed,
 };
 
-static void wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
+static void
+wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
 		uint32_t serial, struct wl_surface *surface,
-		wl_fixed_t surface_x, wl_fixed_t surface_y) {
+		wl_fixed_t surface_x, wl_fixed_t surface_y)
+{
 	struct wl_cursor_image *image;
 	image = cursor_image;
 	wl_surface_attach(cursor_surface,
-		wl_cursor_image_get_buffer(image), 0, 0);
-	wl_surface_damage(cursor_surface, 1, 0,
-		image->width, image->height);
+			wl_cursor_image_get_buffer(image), 0, 0);
+	wl_surface_damage(cursor_surface, 1, 0, image->width, image->height);
 	wl_surface_commit(cursor_surface);
 	wl_pointer_set_cursor(wl_pointer, serial, cursor_surface,
-		image->hotspot_x, image->hotspot_y);
+			image->hotspot_x, image->hotspot_y);
 	input_surface = surface;
 }
 
-static void wl_pointer_leave(void *data, struct wl_pointer *wl_pointer,
-		uint32_t serial, struct wl_surface *surface) {
+static void
+wl_pointer_leave(void *data, struct wl_pointer *wl_pointer,
+		uint32_t serial, struct wl_surface *surface)
+{
 	cur_x = cur_y = -1;
 	buttons = 0;
 }
 
-static void wl_pointer_motion(void *data, struct wl_pointer *wl_pointer,
-		uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y) {
+static void
+wl_pointer_motion(void *data, struct wl_pointer *wl_pointer,
+		uint32_t time, wl_fixed_t surface_x, wl_fixed_t surface_y)
+{
 	cur_x = wl_fixed_to_int(surface_x);
 	cur_y = wl_fixed_to_int(surface_y);
 }
 
-static void wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
-		uint32_t serial, uint32_t time, uint32_t button, uint32_t state) {
+static void
+wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
+		uint32_t serial, uint32_t time, uint32_t button, uint32_t state)
+{
 	if (input_surface == wl_surface) {
 		if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
 			buttons++;
@@ -192,27 +300,37 @@ static void wl_pointer_button(void *data, struct wl_pointer *wl_pointer,
 	}
 }
 
-static void wl_pointer_axis(void *data, struct wl_pointer *wl_pointer,
-		uint32_t time, uint32_t axis, wl_fixed_t value) {
+static void
+wl_pointer_axis(void *data, struct wl_pointer *wl_pointer,
+		uint32_t time, uint32_t axis, wl_fixed_t value)
+{
 	// Who cares
 }
 
-static void wl_pointer_frame(void *data, struct wl_pointer *wl_pointer) {
+static void
+wl_pointer_frame(void *data, struct wl_pointer *wl_pointer)
+{
 	// Who cares
 }
 
-static void wl_pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
-		uint32_t axis_source) {
+static void
+wl_pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
+		uint32_t axis_source)
+{
 	// Who cares
 }
 
-static void wl_pointer_axis_stop(void *data, struct wl_pointer *wl_pointer,
-		uint32_t time, uint32_t axis) {
+static void
+wl_pointer_axis_stop(void *data, struct wl_pointer *wl_pointer,
+		uint32_t time, uint32_t axis)
+{
 	// Who cares
 }
 
-static void wl_pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
-		uint32_t axis, int32_t discrete) {
+static void
+wl_pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
+		uint32_t axis, int32_t discrete)
+{
 	// Who cares
 }
 
@@ -228,34 +346,47 @@ struct wl_pointer_listener pointer_listener = {
 	.axis_discrete = wl_pointer_axis_discrete,
 };
 
-static void wl_keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t format, int32_t fd, uint32_t size) {
+static void
+wl_keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
+		uint32_t format, int32_t fd, uint32_t size)
+{
 	// Who cares
 }
 
-static void wl_keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t serial, struct wl_surface *surface, struct wl_array *keys) {
+static void
+wl_keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
+		uint32_t serial, struct wl_surface *surface,
+		struct wl_array *keys)
+{
 	wlr_log(WLR_DEBUG, "Keyboard enter");
 }
 
-static void wl_keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t serial, struct wl_surface *surface) {
+static void
+wl_keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
+		uint32_t serial, struct wl_surface *surface)
+{
 	wlr_log(WLR_DEBUG, "Keyboard leave");
 }
 
-static void wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
-		uint32_t serial, uint32_t time, uint32_t key, uint32_t state) {
+static void
+wl_keyboard_key(void *data, struct wl_keyboard *wl_keyboard,
+		uint32_t serial, uint32_t time, uint32_t key, uint32_t state)
+{
 	wlr_log(WLR_DEBUG, "Key event: %d %d", key, state);
 }
 
-static void wl_keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,
+static void
+wl_keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,
 		uint32_t serial, uint32_t mods_depressed, uint32_t mods_latched,
-		uint32_t mods_locked, uint32_t group) {
+		uint32_t mods_locked, uint32_t group)
+{
 	// Who cares
 }
 
-static void wl_keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
-		int32_t rate, int32_t delay) {
+static void
+wl_keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
+		int32_t rate, int32_t delay)
+{
 	// Who cares
 }
 
@@ -268,8 +399,10 @@ static struct wl_keyboard_listener keyboard_listener = {
 	.repeat_info = wl_keyboard_repeat_info,
 };
 
-static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
-		enum wl_seat_capability caps) {
+static void
+seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
+		enum wl_seat_capability caps)
+{
 	if ((caps & WL_SEAT_CAPABILITY_POINTER)) {
 		pointer = wl_seat_get_pointer(wl_seat);
 		wl_pointer_add_listener(pointer, &pointer_listener, NULL);
@@ -280,8 +413,9 @@ static void seat_handle_capabilities(void *data, struct wl_seat *wl_seat,
 	}
 }
 
-static void seat_handle_name(void *data, struct wl_seat *wl_seat,
-		const char *name) {
+static void
+seat_handle_name(void *data, struct wl_seat *wl_seat, const char *name)
+{
 	// Who cares
 }
 
@@ -290,14 +424,15 @@ const struct wl_seat_listener seat_listener = {
 	.name = seat_handle_name,
 };
 
-static void handle_global(void *data, struct wl_registry *registry,
-		uint32_t name, const char *interface, uint32_t version) {
+static void
+handle_global(void *data, struct wl_registry *registry,
+		uint32_t name, const char *interface, uint32_t version)
+{
 	if (strcmp(interface, wl_compositor_interface.name) == 0) {
 		compositor = wl_registry_bind(registry, name,
 				&wl_compositor_interface, 1);
 	} else if (strcmp(interface, wl_shm_interface.name) == 0) {
-		shm = wl_registry_bind(registry, name,
-				&wl_shm_interface, 1);
+		shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
 	} else if (strcmp(interface, "wl_output") == 0) {
 		if (output != UINT32_MAX) {
 			if (!wl_output) {
@@ -308,29 +443,29 @@ static void handle_global(void *data, struct wl_registry *registry,
 			}
 		}
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
-		seat = wl_registry_bind(registry, name,
-				&wl_seat_interface, 1);
+		seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
 		wl_seat_add_listener(seat, &seat_listener, NULL);
 	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
-		layer_shell = wl_registry_bind(
-				registry, name, &zwlr_layer_shell_v1_interface, 1);
+		layer_shell = wl_registry_bind(registry, name,
+				&zwlr_layer_shell_v1_interface, 1);
 	} else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
-		xdg_wm_base = wl_registry_bind(
-				registry, name, &xdg_wm_base_interface, 1);
+		xdg_wm_base = wl_registry_bind(registry, name,
+				&xdg_wm_base_interface, 1);
 	}
 }
 
-static void handle_global_remove(void *data, struct wl_registry *registry,
-		uint32_t name) {
+static void
+handle_global_remove(void *data, struct wl_registry *registry, uint32_t name)
+{
 	// who cares
 }
 
 static const struct wl_registry_listener registry_listener = {
-	.global = handle_global,
-	.global_remove = handle_global_remove,
-};
+.global = handle_global,.global_remove = handle_global_remove,};
 
-int main(int argc, char **argv) {
+int
+main(int argc, char **argv)
+{
 	wlr_log_init(WLR_DEBUG, NULL);
 	char *namespace = "wlroots";
 	int exclusive_zone = -1;
@@ -342,23 +477,23 @@ int main(int argc, char **argv) {
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
 	while ((c = getopt(argc, argv, "nxw:h:o:")) != -1) {
 		switch (c) {
-		case 'o':
-			output = atoi(optarg);
-			break;
-		case 'w':
-			width = atoi(optarg);
-			break;
-		case 'h':
-			height = atoi(optarg);
-			break;
-		case 'x':
-			exclusive_zone++;
-			break;
-		case 'n':
-			animate = true;
-			break;
-		default:
-			break;
+			case 'o':
+				output = atoi(optarg);
+				break;
+			case 'w':
+				width = atoi(optarg);
+				break;
+			case 'h':
+				height = atoi(optarg);
+				break;
+			case 'x':
+				exclusive_zone++;
+				break;
+			case 'n':
+				animate = true;
+				break;
+			default:
+				break;
 		}
 	}
 
@@ -390,10 +525,10 @@ int main(int argc, char **argv) {
 	}
 
 	struct wl_cursor_theme *cursor_theme =
-		wl_cursor_theme_load(NULL, 16, shm);
+			wl_cursor_theme_load(NULL, 16, shm);
 	assert(cursor_theme);
 	struct wl_cursor *cursor =
-		wl_cursor_theme_get_cursor(cursor_theme, "crosshair");
+			wl_cursor_theme_get_cursor(cursor_theme, "crosshair");
 	if (cursor == NULL) {
 		cursor = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
 	}
@@ -417,7 +552,7 @@ int main(int argc, char **argv) {
 	assert(wl_surface);
 
 	layer_surface = zwlr_layer_shell_v1_get_layer_surface(layer_shell,
-				wl_surface, wl_output, layer, namespace);
+			wl_surface, wl_output, layer, namespace);
 	assert(layer_surface);
 	zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 	zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);

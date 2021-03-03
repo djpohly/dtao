@@ -45,7 +45,7 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
-#define TEXT "howdy ^^^^ 😎 ^fg(#ffffff)world"
+#define TEXT ((uint8_t *) "howdy ^^^^ 😎 ^fg(#ffffff)world")
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
@@ -186,7 +186,7 @@ draw_frame(void)
 				char *cmd = NULL, *args = NULL;
 				/* Doesn't handle malformed sequences yet */
 				int n;
-				sscanf(p, "%m[^(](%m[^)])%n", &cmd, &args, &n);
+				sscanf((char *) p, "%m[^(](%m[^)])%n", &cmd, &args, &n);
 				p += n;
 				fprintf(stderr, "command %s(%s) detected\n", cmd, args);
 				free(cmd);

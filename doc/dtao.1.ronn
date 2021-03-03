@@ -1,0 +1,51 @@
+dtao(1) -- general-purpose status, messaging, and notification bar for Wayland
+====
+
+## SYNOPSIS
+
+`dtao` [-bx] [-f <FONT>] [-h <PX>] [-o <OUTPUT>] [-w <PX>]
+
+
+## DESCRIPTION
+
+`dtao` reads text and commands from standard input, displaying them on a customizable status bar.
+
+
+## OPTIONS
+
+* `-b`:
+  toggle bar position from the top to bottom of the screen (and vice versa)
+
+* `-f` <FONT>:
+  display text using font specified by <FONT> (as parsed by Fontconfig)
+
+* `-h` <PX>:
+  set bar height to <PX> pixels
+
+* `-o` <OUTPUT>:
+  display bar on monitor <OUTPUT>
+
+* `-w` <PX>:
+  set bar width to <PX> pixels
+
+* `-x`:
+  when used once: bar will not cover "exclusive zones" of other layer-shell surfaces; when used twice: bar will request its own exclusive zone
+
+
+## EXIT STATUS
+
+* 0:
+  Reached EOF without encountering any errors
+
+* 1:
+  Some error occurred (see output)
+
+
+## AUTHOR
+
+Written by Devin J. Pohly.
+
+
+## REPORTING BUGS
+
+See project page at [https://github.com/djpohly/dtao].

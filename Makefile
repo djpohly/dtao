@@ -1,11 +1,15 @@
 BINS = dtao
+MANS = doc/dtao.1
 
 CFLAGS += -Wall -Wextra -Wno-unused-parameter
 
-all: $(BINS)
+all: $(BINS) $(MANS)
 
 clean:
 	$(RM) $(BINS)
+
+$(MANS): %: %.ronn
+	ronn -r $<
 
 WAYLAND_PROTOCOLS=$(shell pkg-config --variable=pkgdatadir wayland-protocols)
 WAYLAND_SCANNER=$(shell pkg-config --variable=wayland_scanner wayland-scanner)

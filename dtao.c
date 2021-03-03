@@ -45,10 +45,7 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
-#define TEXT "howdy 😎 world"
-
-// Text color
-static pixman_image_t *fgcolor;
+#define TEXT "howdy ^^^^ 😎 ^fg(#ffffff)world"
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
@@ -156,46 +153,77 @@ draw_frame(void)
 	pixman_image_t *canvas = pixman_image_create_bits(PIXMAN_x8r8g8b8,
 			width, height, data, width * 4);
 
+	pixman_box32_t canvasbox = {.x1 = 0, .x2 = width, .y1 = 0, .y2 = height};
+	pixman_color_t bgcolor = {
+		.red = 0xc000,
+		.green = 0xc000,
+		.blue = 0xc000,
+		.alpha = 0xffff,
+	};
+	pixman_image_fill_boxes(PIXMAN_OP_SRC, canvas, &bgcolor, 1, &canvasbox);
+
+	pixman_image_t *textimg = pixman_image_create_bits(PIXMAN_a8r8g8b8,
+			width, height, NULL, width * 4);
+
 	uint8_t *text = TEXT;
 
-	int n;
-
-	fgcolor = pixman_image_create_solid_fill(
+	pixman_image_t *fgfill = pixman_image_create_solid_fill(
 			&(pixman_color_t){
-				.red = 0xd000,
-				.green = 0xe800,
-				.blue = 0x4000,
+				.red = 0x9000,
+				.green = 0xc000,
+				.blue = 0x3000,
 				.alpha = 0xffff,
 			});
 
-	int xpos = 0, ypos = 0;
+	/* Start drawing in top left (ypos sets the text baseline) */
+	int xpos = 0, ypos = font->ascent;
 
-	uint32_t codepoint, lastcp = 0, state = 0;
-	for (n = 0; text[n]; n++) {
-		// Returns nonzero when more bytes are needed
-		if (utf8decode(&state, &codepoint, text[n]))
+	uint32_t codepoint, lastcp = 0, state = UTF8_ACCEPT;
+	for (uint8_t *p = text; *p; p++) {
+		if (state == UTF8_ACCEPT && *p == '^') {
+			p++;
+			if (*p != '^') {
+				char *cmd = NULL, *args = NULL;
+				/* Doesn't handle malformed sequences yet */
+				int n;
+				sscanf(p, "%m[^(](%m[^)])%n", &cmd, &args, &n);
+				p += n;
+				fprintf(stderr, "command %s(%s) detected\n", cmd, args);
+				free(cmd);
+				free(args);
+			}
+		}
+
+		/* Returns nonzero if more bytes are needed */
+		if (utf8decode(&state, &codepoint, *p))
 			continue;
 
+		/* Workaround: using FCFT_SUBPIXEL_NONE here ensures we get
+		 * either a8r8g8b8 for pre-rendered glyphs or a8 for others.
+		 * LCD mode results in x8r8g8b8 format, and I haven't figured
+		 * out how to get that to blend nicely using composite32.
+		 */
 		const struct fcft_glyph *glyph = fcft_glyph_rasterize(
-				font, codepoint, FCFT_SUBPIXEL_DEFAULT);
+				font, codepoint, FCFT_SUBPIXEL_NONE);
 		if (!glyph)
 			continue;
+
+		/* Adjust x position based on kerning with previous glyph */
 		long x_kern = 0;
 		if (lastcp)
 			fcft_kerning(font, lastcp, codepoint, &x_kern, NULL);
 		xpos += x_kern;
 		lastcp = codepoint;
 
+		/* Detect and handle pre-rendered glyphs (e.g. emoji) */
 		if (pixman_image_get_format(glyph->pix) == PIXMAN_a8r8g8b8) {
 			pixman_image_composite32(
-				PIXMAN_OP_OVER, glyph->pix, NULL, canvas, 0, 0, 0, 0,
-				xpos + glyph->x, ypos + font->ascent - glyph->y,
-				glyph->width, glyph->height);
+				PIXMAN_OP_OVER, glyph->pix, NULL, textimg, 0, 0, 0, 0,
+				xpos + glyph->x, ypos - glyph->y, glyph->width, glyph->height);
 		} else {
 			pixman_image_composite32(
-				PIXMAN_OP_OVER, fgcolor, glyph->pix, canvas, 0, 0, 0, 0,
-				xpos + glyph->x, ypos + font->ascent - glyph->y,
-				glyph->width, glyph->height);
+				PIXMAN_OP_OVER, fgfill, glyph->pix, textimg, 0, 0, 0, 0,
+				xpos + glyph->x, ypos - glyph->y, glyph->width, glyph->height);
 		}
 
 		/* increment pen position */
@@ -203,11 +231,26 @@ draw_frame(void)
 		ypos += glyph->advance.y;
 	}
 
+	/* Something like this could be used for ^bg() */
+	pixman_box32_t bgbox = {.x1 = 0, .x2 = xpos, .y1 = 0, .y2 = height};
+	pixman_color_t textbgcolor = {
+		.red = 0x1800,
+		.green = 0x1800,
+		.blue = 0x7400,
+		.alpha = 0xffff,
+	};
+	pixman_image_fill_boxes(PIXMAN_OP_SRC, canvas, &textbgcolor, 1, &bgbox);
+
+	/* Draw text over background */
+	pixman_image_composite32(PIXMAN_OP_OVER, textimg, NULL, canvas, 0, 0, 0, 0,
+			0, 0, width, height);
+
 	if (state != UTF8_ACCEPT)
 		fprintf(stderr, "malformed UTF-8 sequence\n");
 
+	pixman_image_unref(textimg);
 	pixman_image_unref(canvas);
-	pixman_image_unref(fgcolor);
+	pixman_image_unref(fgfill);
 	munmap(data, size);
 	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
 	return buffer;

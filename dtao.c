@@ -28,11 +28,9 @@
 // author intends the book's code examples to be permissively licensed as well.
 
 #define _POSIX_C_SOURCE 200112L
-#include <linux/input-event-codes.h>
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <GLES2/gl2.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdbool.h>

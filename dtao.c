@@ -41,7 +41,6 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
-#include <wayland-client.h>
 #include <fcft/fcft.h>
 #include <pixman.h>
 #include "utf8.h"

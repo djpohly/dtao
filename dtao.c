@@ -309,6 +309,7 @@ main(int argc, char **argv)
 		}
 	}
 
+	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
 	font = fcft_from_name(1, (const char *[]) {fontstr}, NULL);
 	if (!font) {
 		fprintf(stderr, "error in fcft_from_name\n");

@@ -55,11 +55,9 @@ static struct wl_shm *shm;
 static struct xdg_wm_base *xdg_wm_base;
 static struct zwlr_layer_shell_v1 *layer_shell;
 
-struct zwlr_layer_surface_v1 *layer_surface;
+static struct zwlr_layer_surface_v1 *layer_surface;
 static struct wl_output *wl_output;
-
-struct wl_surface *wl_surface;
-struct wl_callback *frame_callback;
+static struct wl_surface *wl_surface;
 
 static uint32_t output = UINT32_MAX;
 
@@ -280,7 +278,7 @@ layer_surface_closed(void *data, struct zwlr_layer_surface_v1 *surface)
 	run_display = false;
 }
 
-struct zwlr_layer_surface_v1_listener layer_surface_listener = {
+static struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 	.configure = layer_surface_configure,
 	.closed = layer_surface_closed,
 };

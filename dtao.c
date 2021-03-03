@@ -323,26 +323,28 @@ main(int argc, char **argv)
 	anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-	while ((c = getopt(argc, argv, "xbw:h:o:f:")) != -1) {
+	while ((c = getopt(argc, argv, "bf:h:o:w:x")) != -1) {
 		switch (c) {
+			case 'b':
+				anchor ^= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+					ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+				break;
+			case 'f':
+				fontstr = optarg;
+				break;
+			case 'h':
+				height = atoi(optarg);
+				break;
 			case 'o':
 				output = atoi(optarg);
 				break;
 			case 'w':
 				width = atoi(optarg);
 				break;
-			case 'h':
-				height = atoi(optarg);
-				break;
-			case 'b':
-				anchor ^= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-					ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
-				break;
 			case 'x':
+				// -x: avoid other exclusive zones
+				// -xx: request exclusive zone for ourselves
 				exclusive_zone++;
-				break;
-			case 'f':
-				fontstr = optarg;
 				break;
 			default:
 				break;

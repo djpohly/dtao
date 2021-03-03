@@ -323,7 +323,7 @@ main(int argc, char **argv)
 	anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-	while ((c = getopt(argc, argv, "xw:h:o:f:")) != -1) {
+	while ((c = getopt(argc, argv, "xbw:h:o:f:")) != -1) {
 		switch (c) {
 			case 'o':
 				output = atoi(optarg);
@@ -333,6 +333,10 @@ main(int argc, char **argv)
 				break;
 			case 'h':
 				height = atoi(optarg);
+				break;
+			case 'b':
+				anchor ^= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+					ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
 				break;
 			case 'x':
 				exclusive_zone++;

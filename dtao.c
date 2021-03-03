@@ -30,17 +30,17 @@
 #define _POSIX_C_SOURCE 200112L
 #include <assert.h>
 #include <errno.h>
+#include <fcft/fcft.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <stdio.h>
+#include <pixman.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
-#include <fcft/fcft.h>
-#include <pixman.h>
 #include "utf8.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"

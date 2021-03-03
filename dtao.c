@@ -15,10 +15,11 @@
 #include <wayland-client.h>
 #include <fcft/fcft.h>
 #include <pixman.h>
+#include "utf8.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
-#define TEXT "howdy world"
+#define TEXT "howdy 😎 world"
 
 // Text color
 static pixman_image_t *fgcolor;
@@ -129,7 +130,7 @@ draw_frame(void)
 	pixman_image_t *canvas = pixman_image_create_bits(PIXMAN_x8r8g8b8,
 			width, height, data, width * 4);
 
-	char *text = TEXT;
+	uint8_t *text = TEXT;
 
 	int n;
 
@@ -143,15 +144,21 @@ draw_frame(void)
 
 	int xpos = 0, ypos = 0;
 
+	uint32_t codepoint, lastcp = 0, state = 0;
 	for (n = 0; text[n]; n++) {
+		// Returns nonzero when more bytes are needed
+		if (utf8decode(&state, &codepoint, text[n]))
+			continue;
+
 		const struct fcft_glyph *glyph = fcft_glyph_rasterize(
-				font, text[n], FCFT_SUBPIXEL_DEFAULT);
+				font, codepoint, FCFT_SUBPIXEL_DEFAULT);
 		if (!glyph)
 			continue;
 		long x_kern = 0;
-		if (n > 0)
-			fcft_kerning(font, text[n - 1], text[n], &x_kern, NULL);
+		if (lastcp)
+			fcft_kerning(font, lastcp, codepoint, &x_kern, NULL);
 		xpos += x_kern;
+		lastcp = codepoint;
 
 		if (pixman_image_get_format(glyph->pix) == PIXMAN_a8r8g8b8) {
 			pixman_image_composite32(
@@ -169,6 +176,9 @@ draw_frame(void)
 		xpos += glyph->advance.x;
 		ypos += glyph->advance.y;
 	}
+
+	if (state != UTF8_ACCEPT)
+		fprintf(stderr, "malformed UTF-8 sequence\n");
 
 	pixman_image_unref(canvas);
 	pixman_image_unref(fgcolor);

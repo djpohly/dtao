@@ -61,8 +61,6 @@ static struct wl_surface *wl_surface;
 
 static uint32_t output = UINT32_MAX;
 
-static uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
-static uint32_t anchor = 0;
 static uint32_t width = 0, height = 0;
 static bool run_display = true;
 
@@ -360,8 +358,8 @@ main(int argc, char **argv)
 	char *fontstr = "";
 	int exclusive_zone = -1;
 	int c;
-	layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
-	anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+	uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+	uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
 	while ((c = getopt(argc, argv, "bf:h:o:w:x")) != -1) {

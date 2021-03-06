@@ -143,7 +143,7 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 			bg->alpha = 0xffff;
 			return end;
 		}
-		int ret = sscanf(arg, "#%02x%02x%02x%02x", &r, &g, &b, &a);
+		int ret = sscanf(arg, "#%02hx%02hx%02hx%02hx", &r, &g, &b, &a);
 		fprintf(stderr, "ret=%d\n", ret);
 		if (ret < 3) {
 			fprintf(stderr, "Malformed bg command\n");
@@ -156,7 +156,7 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 		bg->blue = b | b << 8;
 		bg->alpha = a | a << 8;
 	} else {
-		fprintf(stderr, "Unrecognized command \"%s\"\n", cmd, arg);
+		fprintf(stderr, "Unrecognized command \"%s\"\n", cmd);
 	}
 
 	return end;

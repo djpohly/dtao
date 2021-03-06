@@ -47,7 +47,7 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
-#define TEXT ((uint8_t *) "howdy ^^^^ 😎 ^fg(#ffffff)world")
+#define TEXT ((uint8_t *) "howdy ^^^^ 😎 ^bg(#ffffff)world")
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
@@ -126,6 +126,44 @@ allocate_shm_file(size_t size)
 	return fd;
 }
 
+static char *
+handle_cmd(char *cmd, pixman_color_t *bg)
+{
+	char *arg, *end;
+
+	if (!(arg = strchr(cmd, '(')) || !(end = strchr(arg + 1, ')')))
+		return cmd;
+
+	*arg++ = '\0';
+	*end = '\0';
+
+	if (!strcmp(cmd, "bg")) {
+		uint16_t r, g, b, a;
+		if (!*arg) {
+			/* XXX set default background color */
+			bg->red = bg->green = bg->blue = 0x0000;
+			bg->alpha = 0xffff;
+			return end;
+		}
+		int ret = sscanf(arg, "#%02x%02x%02x%02x", &r, &g, &b, &a);
+		fprintf(stderr, "ret=%d\n", ret);
+		if (ret < 3) {
+			fprintf(stderr, "Malformed bg command\n");
+			return end;
+		}
+		if (ret == 3)
+			a = 0xff;
+		bg->red = r | r << 8;
+		bg->green = g | g << 8;
+		bg->blue = b | b << 8;
+		bg->alpha = a | a << 8;
+	} else {
+		fprintf(stderr, "Unrecognized command \"%s\"\n", cmd, arg);
+	}
+
+	return end;
+}
+
 static struct wl_buffer *
 draw_frame(void)
 {
@@ -158,12 +196,7 @@ draw_frame(void)
 		.blue = 0x2000,
 		.alpha = 0x4fff,
 	};
-	pixman_color_t textbgcolor = {
-		.red = 0x0400,
-		.green = 0x4300,
-		.blue = 0x1400,
-		.alpha = 0xefff,
-	};
+	pixman_color_t textbgcolor = bgcolor;
 	pixman_color_t textfgcolor = {
 		.red = 0x1fff,
 		.green = 0x0000,
@@ -182,7 +215,8 @@ draw_frame(void)
 
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
 
-	uint8_t *text = TEXT;
+	/* XXX for testing */
+	uint8_t *text = strdup(TEXT);
 
 	/* Start drawing in top left (ypos sets the text baseline) */
 	int xpos = 0, ypos = font->ascent;
@@ -194,14 +228,8 @@ draw_frame(void)
 		if (state == UTF8_ACCEPT && *p == '^') {
 			p++;
 			if (*p != '^') {
-				char *cmd = NULL, *args = NULL;
-				/* Doesn't handle malformed sequences yet */
-				int n;
-				sscanf((char *) p, "%m[^(](%m[^)])%n", &cmd, &args, &n);
-				p += n;
-				fprintf(stderr, "command %s(%s) detected\n", cmd, args);
-				free(cmd);
-				free(args);
+				p = handle_cmd((char *) p, &textbgcolor);
+				continue;
 			}
 		}
 

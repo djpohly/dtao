@@ -35,7 +35,7 @@ wlr-layer-shell-unstable-v1-protocol.c:
 wlr-layer-shell-unstable-v1-protocol.o: wlr-layer-shell-unstable-v1-protocol.h
 
 # Protocol dependencies
-dtao: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o
+dtao: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o utf8.h
 
 # Library dependencies
 dtao: CFLAGS+=$(shell pkg-config --cflags wayland-client fcft pixman-1)

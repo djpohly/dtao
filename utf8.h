@@ -43,7 +43,7 @@ static const uint8_t utf8d[] = {
 };
 
 static inline uint32_t
-utf8decode(uint32_t *state, uint32_t *codep, uint32_t byte)
+utf8decode(uint32_t *state, uint32_t *codep, uint8_t byte)
 {
 	uint32_t type = utf8d[byte];
 

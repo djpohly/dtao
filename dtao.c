@@ -47,7 +47,7 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
-#define TEXT ((uint8_t *) "howdy ^^^^ 😎 ^bg(#ffffff)world")
+#define TEXT "howdy ^^^^ 😎 ^bg(#ffffff)world"
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
@@ -216,19 +216,19 @@ draw_frame(void)
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
 
 	/* XXX for testing */
-	uint8_t *text = strdup(TEXT);
+	char *text = strdup(TEXT);
 
 	/* Start drawing in top left (ypos sets the text baseline) */
 	int xpos = 0, ypos = font->ascent;
 	int lastbgx = 0;
 
 	uint32_t codepoint, lastcp = 0, state = UTF8_ACCEPT;
-	for (uint8_t *p = text; *p; p++) {
+	for (char *p = text; *p; p++) {
 		/* Check for inline ^ commands */
 		if (state == UTF8_ACCEPT && *p == '^') {
 			p++;
 			if (*p != '^') {
-				p = handle_cmd((char *) p, &textbgcolor);
+				p = handle_cmd(p, &textbgcolor);
 				continue;
 			}
 		}

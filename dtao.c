@@ -56,6 +56,7 @@ static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct xdg_wm_base *xdg_wm_base;
 static struct zwlr_layer_shell_v1 *layer_shell;
+static struct wl_buffer *buffer;
 
 static struct zwlr_layer_surface_v1 *layer_surface;
 static struct wl_output *wl_output;
@@ -164,7 +165,7 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 	return end;
 }
 
-static struct wl_buffer *
+static void
 draw_frame(void)
 {
 	int stride = width * 4;
@@ -172,19 +173,18 @@ draw_frame(void)
 
 	/* Allocate buffer to be attached to the surface */
 	int fd = allocate_shm_file(size);
-	if (fd == -1) {
-		return NULL;
-	}
+	if (fd == -1)
+		return;
 
 	uint32_t *data = mmap(NULL, size,
 			PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (data == MAP_FAILED) {
 		close(fd);
-		return NULL;
+		return;
 	}
 
 	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, size);
-	struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
+	buffer = wl_shm_pool_create_buffer(pool, 0,
 			width, height, stride, WL_SHM_FORMAT_ARGB8888);
 	wl_shm_pool_destroy(pool);
 	close(fd);
@@ -294,7 +294,6 @@ draw_frame(void)
 	pixman_image_unref(bar);
 	munmap(data, size);
 	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
-	return buffer;
 }
 
 static void
@@ -306,7 +305,7 @@ layer_surface_configure(void *data,
 	height = h;
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
-	struct wl_buffer *buffer = draw_frame();
+	draw_frame();
 	wl_surface_attach(wl_surface, buffer, 0, 0);
 	wl_surface_commit(wl_surface);
 }

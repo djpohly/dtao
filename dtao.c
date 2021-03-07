@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/select.h>
 #include <time.h>
 #include <unistd.h>
 #include "utf8.h"
@@ -48,6 +49,7 @@
 #include "xdg-shell-protocol.h"
 
 #define TEXT "howdy ^^^^ 😎 ^bg(#ffffff)world"
+#define MAX_LINE_LEN 8192
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
@@ -351,6 +353,49 @@ handle_global(void *data, struct wl_registry *registry,
 
 static const struct wl_registry_listener registry_listener = {.global = handle_global,};
 
+static void
+read_stdin(void)
+{
+	char line[MAX_LINE_LEN];
+	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN);
+	if (b < 0)
+		perror("read");
+	if (b <= 0) {
+		run_display = 0;
+		return;
+	}
+}
+
+static void
+event_loop(void)
+{
+	int ret;
+	int wlfd = wl_display_get_fd(display);
+
+	while (run_display) {
+		fd_set rfds;
+		FD_ZERO(&rfds);
+		FD_SET(STDIN_FILENO, &rfds);
+		FD_SET(wlfd, &rfds);
+
+		/* Does this need to be inside the loop? */
+		wl_display_flush(display);
+
+		ret = select(wlfd + 1, &rfds, NULL, NULL, NULL);
+		if (ret < 0) {
+			perror("select");
+			return;
+		}
+		if (FD_ISSET(STDIN_FILENO, &rfds)) {
+			read_stdin();
+		}
+		if (FD_ISSET(wlfd, &rfds)) {
+			if (wl_display_dispatch(display) == -1)
+				break;
+		}
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -446,9 +491,7 @@ main(int argc, char **argv)
 
 	wl_display_roundtrip(display);
 
-	while (wl_display_dispatch(display) != -1 && run_display) {
-		/* This space intentionally left blank */
-	}
+	event_loop();
 
 	fcft_destroy(font);
 

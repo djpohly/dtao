@@ -30,7 +30,6 @@
  */
 
 #define _POSIX_C_SOURCE 200112L
-#include <assert.h>
 #include <errno.h>
 #include <fcft/fcft.h>
 #include <fcntl.h>
@@ -47,6 +46,9 @@
 #include "utf8.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
+
+#define BARF(fmt, ...)		do { fprintf(stderr, fmt "\n", ##__VA_ARGS__); exit(EXIT_FAILURE); } while (0)
+#define EBARF(fmt, ...)		BARF(fmt ": %s", ##__VA_ARGS__, strerror(errno))
 
 #define MAX_LINE_LEN 8192
 
@@ -386,17 +388,15 @@ event_loop(void)
 		wl_display_flush(display);
 
 		ret = select(wlfd + 1, &rfds, NULL, NULL, NULL);
-		if (ret < 0) {
-			perror("select");
-			return;
-		}
-		if (FD_ISSET(STDIN_FILENO, &rfds)) {
+		if (ret < 0)
+			EBARF("select");
+
+		if (FD_ISSET(STDIN_FILENO, &rfds))
 			read_stdin();
-		}
-		if (FD_ISSET(wlfd, &rfds)) {
+
+		if (FD_ISSET(wlfd, &rfds))
 			if (wl_display_dispatch(display) == -1)
 				break;
-		}
 	}
 }
 
@@ -439,48 +439,40 @@ main(int argc, char **argv)
 		}
 	}
 
+	/* Load selected font */
 	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
 	font = fcft_from_name(1, (const char *[]) {fontstr}, NULL);
-	if (!font) {
-		fprintf(stderr, "error in fcft_from_name\n");
-		return 1;
-	}
+	if (!font)
+		BARF("could not load font");
 
-	if (!height) {
-		height = font->ascent + font->descent;
-		fprintf(stderr, "height = %d + %d = %d\n", font->ascent,
-				font->descent, height);
-	}
-
+	/* Set up display and protocols */
 	display = wl_display_connect(NULL);
-	if (display == NULL) {
-		fprintf(stderr, "Failed to create display\n");
-		return 1;
-	}
+	if (!display)
+		BARF("Failed to create display");
 
 	struct wl_registry *registry = wl_display_get_registry(display);
 	wl_registry_add_listener(registry, &registry_listener, NULL);
 	wl_display_roundtrip(display);
 
-	if (compositor == NULL) {
-		fprintf(stderr, "wl_compositor not available\n");
-		return 1;
-	}
-	if (shm == NULL) {
-		fprintf(stderr, "wl_shm not available\n");
-		return 1;
-	}
-	if (layer_shell == NULL) {
-		fprintf(stderr, "layer_shell not available\n");
-		return 1;
-	}
+	if (!compositor || !shm || !layer_shell)
+		BARF("compositor does not support all needed protocols");
 
+	/* Create layer-shell surface */
 	wl_surface = wl_compositor_create_surface(compositor);
-	assert(wl_surface);
+	if (!wl_surface)
+		BARF("could not create wl_surface");
 
 	layer_surface = zwlr_layer_shell_v1_get_layer_surface(layer_shell,
 			wl_surface, wl_output, layer, namespace);
-	assert(layer_surface);
+	if (!layer_surface)
+		BARF("could not create layer_surface");
+	zwlr_layer_surface_v1_add_listener(layer_surface,
+			&layer_surface_listener, layer_surface);
+
+	/* Set layer size and positioning */
+	if (!height)
+		height = font->ascent + font->descent;
+
 	zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 	zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);
 	if (exclusive_zone > 0) {
@@ -489,10 +481,7 @@ main(int argc, char **argv)
 		zwlr_layer_surface_v1_set_exclusive_zone(layer_surface,
 				exclusive_zone);
 	}
-	zwlr_layer_surface_v1_add_listener(layer_surface,
-			&layer_surface_listener, layer_surface);
 	wl_surface_commit(wl_surface);
-
 	wl_display_roundtrip(display);
 
 	event_loop();

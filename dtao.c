@@ -1,5 +1,5 @@
-/* Portions of this code are from wlroots layer-shell example and used under the
- * following license:
+/* Portions of this code are derived from wlroots layer-shell example and used
+ * under the following license:
  *
  * Copyright (c) 2017, 2018 Drew DeVault
  * Copyright (c) 2014 Jari Vetoniemi

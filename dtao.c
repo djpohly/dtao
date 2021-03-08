@@ -1,5 +1,5 @@
-/* Portions of this code are from wlroots layer-shell example and used under the
- * following license:
+/* Portions of this code are derived from wlroots layer-shell example and used
+ * under the following license:
  *
  * Copyright (c) 2017, 2018 Drew DeVault
  * Copyright (c) 2014 Jari Vetoniemi
@@ -30,7 +30,6 @@
  */
 
 #define _POSIX_C_SOURCE 200112L
-#include <assert.h>
 #include <errno.h>
 #include <fcft/fcft.h>
 #include <fcntl.h>
@@ -41,19 +40,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/select.h>
 #include <time.h>
 #include <unistd.h>
 #include "utf8.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
-#define TEXT ((uint8_t *) "howdy ^^^^ 😎 ^bg(#ffffff)world")
+#define BARF(fmt, ...)		do { fprintf(stderr, fmt "\n", ##__VA_ARGS__); exit(EXIT_FAILURE); } while (0)
+#define EBARF(fmt, ...)		BARF(fmt ": %s", ##__VA_ARGS__, strerror(errno))
+
+#define MAX_LINE_LEN 8192
 
 static struct wl_display *display;
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct xdg_wm_base *xdg_wm_base;
 static struct zwlr_layer_shell_v1 *layer_shell;
+static struct wl_buffer *buffer;
 
 static struct zwlr_layer_surface_v1 *layer_surface;
 static struct wl_output *wl_output;
@@ -61,8 +65,6 @@ static struct wl_surface *wl_surface;
 
 static uint32_t output = UINT32_MAX;
 
-static uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
-static uint32_t anchor = 0;
 static uint32_t width = 0, height = 0;
 static bool run_display = true;
 
@@ -145,7 +147,7 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 			bg->alpha = 0xffff;
 			return end;
 		}
-		int ret = sscanf(arg, "#%02x%02x%02x%02x", &r, &g, &b, &a);
+		int ret = sscanf(arg, "#%02hx%02hx%02hx%02hx", &r, &g, &b, &a);
 		fprintf(stderr, "ret=%d\n", ret);
 		if (ret < 3) {
 			fprintf(stderr, "Malformed bg command\n");
@@ -158,47 +160,46 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 		bg->blue = b | b << 8;
 		bg->alpha = a | a << 8;
 	} else {
-		fprintf(stderr, "Unrecognized command \"%s\"\n", cmd, arg);
+		fprintf(stderr, "Unrecognized command \"%s\"\n", cmd);
 	}
 
 	return end;
 }
 
-static struct wl_buffer *
-draw_frame(void)
+static void
+draw_frame(char *text)
 {
 	int stride = width * 4;
 	int size = stride * height;
 
 	/* Allocate buffer to be attached to the surface */
 	int fd = allocate_shm_file(size);
-	if (fd == -1) {
-		return NULL;
-	}
+	if (fd == -1)
+		return;
 
 	uint32_t *data = mmap(NULL, size,
 			PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (data == MAP_FAILED) {
 		close(fd);
-		return NULL;
+		return;
 	}
 
 	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, size);
-	struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
+	buffer = wl_shm_pool_create_buffer(pool, 0,
 			width, height, stride, WL_SHM_FORMAT_ARGB8888);
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
 	/* Colors (premultiplied!) */
 	pixman_color_t bgcolor = {
-		.red = 0x0000,
-		.green = 0x0000,
-		.blue = 0x2000,
-		.alpha = 0x4fff,
+		.red = 0x8000,
+		.green = 0x7000,
+		.blue = 0xd000,
+		.alpha = 0xffff,
 	};
 	pixman_color_t textbgcolor = bgcolor;
 	pixman_color_t textfgcolor = {
-		.red = 0x1fff,
+		.red = 0x0000,
 		.green = 0x0000,
 		.blue = 0x0000,
 		.alpha = 0x8fff,
@@ -215,20 +216,17 @@ draw_frame(void)
 
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
 
-	/* XXX for testing */
-	uint8_t *text = strdup(TEXT);
-
 	/* Start drawing in top left (ypos sets the text baseline) */
 	int xpos = 0, ypos = font->ascent;
 	int lastbgx = 0;
 
 	uint32_t codepoint, lastcp = 0, state = UTF8_ACCEPT;
-	for (uint8_t *p = text; *p; p++) {
+	for (char *p = text; *p; p++) {
 		/* Check for inline ^ commands */
 		if (state == UTF8_ACCEPT && *p == '^') {
 			p++;
 			if (*p != '^') {
-				p = handle_cmd((char *) p, &textbgcolor);
+				p = handle_cmd(p, &textbgcolor);
 				continue;
 			}
 		}
@@ -294,7 +292,8 @@ draw_frame(void)
 	pixman_image_unref(bar);
 	munmap(data, size);
 	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
-	return buffer;
+	wl_surface_attach(wl_surface, buffer, 0, 0);
+	wl_surface_commit(wl_surface);
 }
 
 static void
@@ -306,9 +305,7 @@ layer_surface_configure(void *data,
 	height = h;
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
-	struct wl_buffer *buffer = draw_frame();
-	wl_surface_attach(wl_surface, buffer, 0, 0);
-	wl_surface_commit(wl_surface);
+	draw_frame("");
 }
 
 static void
@@ -353,6 +350,56 @@ handle_global(void *data, struct wl_registry *registry,
 
 static const struct wl_registry_listener registry_listener = {.global = handle_global,};
 
+static void
+read_stdin(void)
+{
+	char line[MAX_LINE_LEN];
+	char *end;
+	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
+	if (b < 0)
+		perror("read");
+	if (b <= 0) {
+		run_display = 0;
+		return;
+	}
+	/* Terminate string after first line */
+	/* XXX handle multiple lines here */
+	if ((end = memchr(line, '\n', b))) {
+		*end = '\0';
+	} else {
+		line[b] = '\0';
+	}
+	draw_frame(line);
+}
+
+static void
+event_loop(void)
+{
+	int ret;
+	int wlfd = wl_display_get_fd(display);
+
+	while (run_display) {
+		fd_set rfds;
+		FD_ZERO(&rfds);
+		FD_SET(STDIN_FILENO, &rfds);
+		FD_SET(wlfd, &rfds);
+
+		/* Does this need to be inside the loop? */
+		wl_display_flush(display);
+
+		ret = select(wlfd + 1, &rfds, NULL, NULL, NULL);
+		if (ret < 0)
+			EBARF("select");
+
+		if (FD_ISSET(STDIN_FILENO, &rfds))
+			read_stdin();
+
+		if (FD_ISSET(wlfd, &rfds))
+			if (wl_display_dispatch(display) == -1)
+				break;
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -360,8 +407,8 @@ main(int argc, char **argv)
 	char *fontstr = "";
 	int exclusive_zone = -1;
 	int c;
-	layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
-	anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+	uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+	uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
 	while ((c = getopt(argc, argv, "bf:h:o:w:x")) != -1) {
@@ -392,48 +439,40 @@ main(int argc, char **argv)
 		}
 	}
 
+	/* Load selected font */
 	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
 	font = fcft_from_name(1, (const char *[]) {fontstr}, NULL);
-	if (!font) {
-		fprintf(stderr, "error in fcft_from_name\n");
-		return 1;
-	}
+	if (!font)
+		BARF("could not load font");
 
-	if (!height) {
-		height = font->ascent + font->descent;
-		fprintf(stderr, "height = %d + %d = %d\n", font->ascent,
-				font->descent, height);
-	}
-
+	/* Set up display and protocols */
 	display = wl_display_connect(NULL);
-	if (display == NULL) {
-		fprintf(stderr, "Failed to create display\n");
-		return 1;
-	}
+	if (!display)
+		BARF("Failed to create display");
 
 	struct wl_registry *registry = wl_display_get_registry(display);
 	wl_registry_add_listener(registry, &registry_listener, NULL);
 	wl_display_roundtrip(display);
 
-	if (compositor == NULL) {
-		fprintf(stderr, "wl_compositor not available\n");
-		return 1;
-	}
-	if (shm == NULL) {
-		fprintf(stderr, "wl_shm not available\n");
-		return 1;
-	}
-	if (layer_shell == NULL) {
-		fprintf(stderr, "layer_shell not available\n");
-		return 1;
-	}
+	if (!compositor || !shm || !layer_shell)
+		BARF("compositor does not support all needed protocols");
 
+	/* Create layer-shell surface */
 	wl_surface = wl_compositor_create_surface(compositor);
-	assert(wl_surface);
+	if (!wl_surface)
+		BARF("could not create wl_surface");
 
 	layer_surface = zwlr_layer_shell_v1_get_layer_surface(layer_shell,
 			wl_surface, wl_output, layer, namespace);
-	assert(layer_surface);
+	if (!layer_surface)
+		BARF("could not create layer_surface");
+	zwlr_layer_surface_v1_add_listener(layer_surface,
+			&layer_surface_listener, layer_surface);
+
+	/* Set layer size and positioning */
+	if (!height)
+		height = font->ascent + font->descent;
+
 	zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 	zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);
 	if (exclusive_zone > 0) {
@@ -442,15 +481,10 @@ main(int argc, char **argv)
 		zwlr_layer_surface_v1_set_exclusive_zone(layer_surface,
 				exclusive_zone);
 	}
-	zwlr_layer_surface_v1_add_listener(layer_surface,
-			&layer_surface_listener, layer_surface);
 	wl_surface_commit(wl_surface);
-
 	wl_display_roundtrip(display);
 
-	while (wl_display_dispatch(display) != -1 && run_display) {
-		/* This space intentionally left blank */
-	}
+	event_loop();
 
 	fcft_destroy(font);
 

@@ -1,7 +1,7 @@
 BINS = dtao
 MANS = doc/dtao.1
 
-CFLAGS += -Wall -Wextra -Wno-unused-parameter
+CFLAGS += -Wall -Wextra -Wno-unused-parameter -g
 
 all: $(BINS) $(MANS)
 

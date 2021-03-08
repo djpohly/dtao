@@ -2,7 +2,7 @@
 
 (zen + way -> tao)
 
-This is (will be) a stdin-based general-purpose bar for Wayland, modeled after the venerable [dzen2](https://github.com/robm/dzen).  At the moment, it does little more than display a static string on a layer-shell, but that does mean all the tricky Wayland stuff is out of the way and it's ready for contributions.
+This is (will be) a stdin-based general-purpose bar for Wayland, modeled after the venerable [dzen2](https://github.com/robm/dzen).  At the moment, it does little more than display text from stdin on a layer-shell, but the tricky Wayland stuff is out of the way, so it's ready for features to be ported from dzen2.
 
 
 ## Dependencies
@@ -14,5 +14,5 @@ This is (will be) a stdin-based general-purpose bar for Wayland, modeled after t
 
 ## To-do list/contribution opportunities
 
-* Actual functionality
+* Colors with ^fg() and ^bg()
 * Cleanup (currently a cobbled-together mess of examples)

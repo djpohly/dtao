@@ -48,7 +48,6 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
-#define TEXT "howdy ^^^^ 😎 ^bg(#ffffff)world"
 #define MAX_LINE_LEN 8192
 
 static struct wl_display *display;
@@ -166,7 +165,7 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 }
 
 static void
-draw_frame(void)
+draw_frame(char *text)
 {
 	int stride = width * 4;
 	int size = stride * height;
@@ -191,14 +190,14 @@ draw_frame(void)
 
 	/* Colors (premultiplied!) */
 	pixman_color_t bgcolor = {
-		.red = 0x0000,
-		.green = 0x0000,
-		.blue = 0x2000,
-		.alpha = 0x4fff,
+		.red = 0x8000,
+		.green = 0x7000,
+		.blue = 0xd000,
+		.alpha = 0xffff,
 	};
 	pixman_color_t textbgcolor = bgcolor;
 	pixman_color_t textfgcolor = {
-		.red = 0x1fff,
+		.red = 0x0000,
 		.green = 0x0000,
 		.blue = 0x0000,
 		.alpha = 0x8fff,
@@ -214,9 +213,6 @@ draw_frame(void)
 
 
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
-
-	/* XXX for testing */
-	char *text = strdup(TEXT);
 
 	/* Start drawing in top left (ypos sets the text baseline) */
 	int xpos = 0, ypos = font->ascent;
@@ -294,6 +290,8 @@ draw_frame(void)
 	pixman_image_unref(bar);
 	munmap(data, size);
 	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
+	wl_surface_attach(wl_surface, buffer, 0, 0);
+	wl_surface_commit(wl_surface);
 }
 
 static void
@@ -305,9 +303,7 @@ layer_surface_configure(void *data,
 	height = h;
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
-	draw_frame();
-	wl_surface_attach(wl_surface, buffer, 0, 0);
-	wl_surface_commit(wl_surface);
+	draw_frame("");
 }
 
 static void
@@ -356,13 +352,22 @@ static void
 read_stdin(void)
 {
 	char line[MAX_LINE_LEN];
-	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN);
+	char *end;
+	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
 	if (b < 0)
 		perror("read");
 	if (b <= 0) {
 		run_display = 0;
 		return;
 	}
+	/* Terminate string after first line */
+	/* XXX handle multiple lines here */
+	if ((end = memchr(line, '\n', b))) {
+		*end = '\0';
+	} else {
+		line[b] = '\0';
+	}
+	draw_frame(line);
 }
 
 static void

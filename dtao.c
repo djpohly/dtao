@@ -304,7 +304,7 @@ handle_global(void *data, struct wl_registry *registry,
 				&wl_compositor_interface, 1);
 	} else if (strcmp(interface, wl_shm_interface.name) == 0) {
 		shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
-	} else if (strcmp(interface, "wl_output") == 0) {
+	} else if (strcmp(interface, wl_output_interface.name) == 0) {
 		if (output != UINT32_MAX) {
 			if (!wl_output) {
 				wl_output = wl_registry_bind(registry, name,

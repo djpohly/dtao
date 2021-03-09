@@ -179,11 +179,15 @@ draw_frame(char *text)
 	/* Pixman image corresponding to main buffer */
 	pixman_image_t *bar = pixman_image_create_bits(PIXMAN_a8r8g8b8,
 			width, height, data, width * 4);
+	/* Fill bar with background color */
+	pixman_image_fill_boxes(PIXMAN_OP_SRC, bar, &bgcolor, 1,
+			&(pixman_box32_t) {.x1 = 0, .x2 = width, .y1 = 0, .y2 = height});
 
-	/* Text foreground layer */
+	/* Text background and foreground layers */
+	pixman_image_t *background = pixman_image_create_bits(PIXMAN_a8r8g8b8,
+			width, height, data, width * 4);
 	pixman_image_t *foreground = pixman_image_create_bits(PIXMAN_a8r8g8b8,
 			width, height, NULL, width * 4);
-
 
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
 
@@ -248,18 +252,17 @@ draw_frame(char *text)
 
 	/* Example - something like this could be used for ^bg() */
 	pixman_box32_t bgbox = {.x1 = lastbgx, .x2 = xpos, .y1 = 0, .y2 = height};
-	pixman_image_fill_boxes(PIXMAN_OP_SRC, bar, &textbgcolor, 1, &bgbox);
+	pixman_image_fill_boxes(PIXMAN_OP_SRC, background, &textbgcolor, 1, &bgbox);
 	lastbgx = xpos;
 
-	/* Fill remainder of bar with background color */
-	pixman_image_fill_boxes(PIXMAN_OP_SRC, bar, &bgcolor, 1,
-			&(pixman_box32_t) {.x1 = lastbgx, .x2 = width, .y1 = 0, .y2 = height});
-
-	/* Draw text over background */
+	/* Draw background and foreground on bar */
+	pixman_image_composite32(PIXMAN_OP_OVER, background, NULL, bar, 0, 0, 0, 0,
+			0, 0, width, height);
 	pixman_image_composite32(PIXMAN_OP_OVER, foreground, NULL, bar, 0, 0, 0, 0,
 			0, 0, width, height);
 
 	pixman_image_unref(foreground);
+	pixman_image_unref(background);
 	pixman_image_unref(bar);
 	munmap(data, size);
 	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);

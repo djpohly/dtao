@@ -410,12 +410,6 @@ main(int argc, char **argv)
 		}
 	}
 
-	/* Load selected font */
-	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
-	font = fcft_from_name(1, (const char *[]) {fontstr}, NULL);
-	if (!font)
-		BARF("could not load font");
-
 	/* Set up display and protocols */
 	display = wl_display_connect(NULL);
 	if (!display)
@@ -427,6 +421,12 @@ main(int argc, char **argv)
 
 	if (!compositor || !shm || !layer_shell)
 		BARF("compositor does not support all needed protocols");
+
+	/* Load selected font */
+	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
+	font = fcft_from_name(1, (const char *[]) {fontstr}, NULL);
+	if (!font)
+		BARF("could not load font");
 
 	/* Create layer-shell surface */
 	wl_surface = wl_compositor_create_surface(compositor);

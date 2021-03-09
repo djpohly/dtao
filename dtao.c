@@ -34,7 +34,7 @@ static struct wl_surface *wl_surface;
 
 static uint32_t output = UINT32_MAX;
 
-static uint32_t width = 0, height = 0;
+static uint32_t width, height, stride, bufsize;
 static bool run_display = true;
 
 static struct fcft_font *font;
@@ -109,22 +109,19 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 static void
 draw_frame(char *text)
 {
-	int stride = width * 4;
-	int size = stride * height;
-
 	/* Allocate buffer to be attached to the surface */
-	int fd = allocate_shm_file(size);
+	int fd = allocate_shm_file(bufsize);
 	if (fd == -1)
 		return;
 
-	uint32_t *data = mmap(NULL, size,
+	uint32_t *data = mmap(NULL, bufsize,
 			PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (data == MAP_FAILED) {
 		close(fd);
 		return;
 	}
 
-	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, size);
+	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, bufsize);
 	buffer = wl_shm_pool_create_buffer(pool, 0,
 			width, height, stride, WL_SHM_FORMAT_ARGB8888);
 	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
@@ -234,7 +231,7 @@ draw_frame(char *text)
 	pixman_image_unref(foreground);
 	pixman_image_unref(background);
 	pixman_image_unref(bar);
-	munmap(data, size);
+	munmap(data, bufsize);
 	wl_surface_attach(wl_surface, buffer, 0, 0);
 	wl_surface_commit(wl_surface);
 }
@@ -247,6 +244,9 @@ layer_surface_configure(void *data,
 {
 	width = w;
 	height = h;
+	stride = width * 4;
+	bufsize = stride * height;
+
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
 	draw_frame("");

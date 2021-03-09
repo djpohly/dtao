@@ -1,34 +1,3 @@
-/* Portions of this code are derived from wlroots layer-shell example and used
- * under the following license:
- *
- * Copyright (c) 2017, 2018 Drew DeVault
- * Copyright (c) 2014 Jari Vetoniemi
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy of
- * this software and associated documentation files (the "Software"), to deal in
- * the Software without restriction, including without limitation the rights to
- * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
- * of the Software, and to permit persons to whom the Software is furnished to do
- * so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
- *
- * Portions of this code are derived from example code found in The Wayland
- * Protocol by Drew DeVault (https://wayland-book.com/).  The book is available
- * under CC-BY-SA 4.0; we will assume (unless notified otherwise) that the
- * author intends the book's code examples to be permissively licensed as well.
- */
-
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcft/fcft.h>
@@ -81,7 +50,7 @@ static const struct wl_buffer_listener wl_buffer_listener = {
 	.release = wl_buffer_release,
 };
 
-/* Shared memory support code */
+/* Shared memory support function adapted from [wayland-book] */
 static int
 allocate_shm_file(size_t size)
 {
@@ -270,6 +239,7 @@ draw_frame(char *text)
 	wl_surface_commit(wl_surface);
 }
 
+/* Layer-surface setup adapted from layer-shell example in [wlroots] */
 static void
 layer_surface_configure(void *data,
 		struct zwlr_layer_surface_v1 *surface,

@@ -29,7 +29,7 @@
  * author intends the book's code examples to be permissively licensed as well.
  */
 
-#define _POSIX_C_SOURCE 200112L
+#define _GNU_SOURCE
 #include <errno.h>
 #include <fcft/fcft.h>
 #include <fcntl.h>
@@ -82,39 +82,10 @@ static const struct wl_buffer_listener wl_buffer_listener = {
 };
 
 /* Shared memory support code */
-static void
-randname(char *buf)
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
-	long r = ts.tv_nsec;
-	for (int i = 0; i < 6; ++i) {
-		buf[i] = 'A' + (r & 15) + (r & 16) * 2;
-		r >>= 5;
-	}
-}
-
-static int
-create_shm_file(void)
-{
-	int retries = 100;
-	do {
-		char name[] = "/wl_shm-XXXXXX";
-		randname(name + sizeof(name) - 7);
-		--retries;
-		int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
-		if (fd >= 0) {
-			shm_unlink(name);
-			return fd;
-		}
-	} while (retries > 0 && errno == EEXIST);
-	return -1;
-}
-
 static int
 allocate_shm_file(size_t size)
 {
-	int fd = create_shm_file();
+	int fd = memfd_create("surface", MFD_CLOEXEC);
 	if (fd < 0)
 		return -1;
 	int ret;

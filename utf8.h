@@ -19,7 +19,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include <stdio.h>
 #include <stdint.h>
 
 #define UTF8_ACCEPT 0
@@ -54,13 +53,3 @@ utf8decode(uint32_t *state, uint32_t *codep, uint8_t byte)
 	*state = utf8d[256 + *state*16 + type];
 	return *state;
 }
-
-// Use as follows:
-//
-// uint32_t codepoint, state = 0;
-// for (uint8_t *s = str; *s; s++)
-// 	if (!utf8decode(&state, &codepoint, *s))
-// 		handle_codepoint(codepoint);
-// if (state != UTF8_ACCEPT)
-// 		fprintf(stderr, "invalid\n");
-//

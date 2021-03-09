@@ -25,7 +25,6 @@ static struct wl_display *display;
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
 static struct zwlr_layer_shell_v1 *layer_shell;
-static struct wl_buffer *buffer;
 
 static struct zwlr_layer_surface_v1 *layer_surface;
 static struct wl_output *wl_output;
@@ -34,9 +33,11 @@ static struct wl_surface *wl_surface;
 static uint32_t output = UINT32_MAX;
 
 static uint32_t width, height, stride, bufsize;
+static int exclusive_zone = -1;
 static bool run_display = true;
 
 static struct fcft_font *font;
+static char line[MAX_LINE_LEN];
 
 static void
 wl_buffer_release(void *data, struct wl_buffer *wl_buffer)
@@ -105,27 +106,38 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 	return end;
 }
 
-static void
-draw_frame(char *text)
+static uint32_t *
+new_buffer(struct wl_buffer **pbuf)
 {
 	/* Allocate buffer to be attached to the surface */
 	int fd = allocate_shm_file(bufsize);
 	if (fd == -1)
-		return;
+		return NULL;
 
 	uint32_t *data = mmap(NULL, bufsize,
 			PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (data == MAP_FAILED) {
 		close(fd);
-		return;
+		return NULL;
 	}
 
 	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, bufsize);
-	buffer = wl_shm_pool_create_buffer(pool, 0,
+	struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
 			width, height, stride, WL_SHM_FORMAT_ARGB8888);
-	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
 	wl_shm_pool_destroy(pool);
 	close(fd);
+	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
+	*pbuf = buffer;
+	return data;
+}
+
+static struct wl_buffer *
+draw_frame(char *text)
+{
+	struct wl_buffer *buffer;
+	uint32_t *data = new_buffer(&buffer);
+	if (!data)
+		return NULL;
 
 	/* Colors (premultiplied!) */
 	pixman_color_t bgcolor = {
@@ -231,8 +243,7 @@ draw_frame(char *text)
 	pixman_image_unref(background);
 	pixman_image_unref(bar);
 	munmap(data, bufsize);
-	wl_surface_attach(wl_surface, buffer, 0, 0);
-	wl_surface_commit(wl_surface);
+	return buffer;
 }
 
 /* Layer-surface setup adapted from layer-shell example in [wlroots] */
@@ -246,9 +257,16 @@ layer_surface_configure(void *data,
 	stride = width * 4;
 	bufsize = stride * height;
 
+	if (exclusive_zone > 0)
+		exclusive_zone = height;
+	zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, exclusive_zone);
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
-	draw_frame("");
+	struct wl_buffer *buffer = draw_frame(line);
+	if (!buffer)
+		return;
+	wl_surface_attach(wl_surface, buffer, 0, 0);
+	wl_surface_commit(wl_surface);
 }
 
 static void
@@ -293,7 +311,6 @@ static const struct wl_registry_listener registry_listener = {.global = handle_g
 static void
 read_stdin(void)
 {
-	char line[MAX_LINE_LEN];
 	char *end;
 	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
 	if (b < 0)
@@ -309,7 +326,11 @@ read_stdin(void)
 	} else {
 		line[b] = '\0';
 	}
-	draw_frame(line);
+	struct wl_buffer *buffer = draw_frame(line);
+	if (!buffer)
+		return;
+	wl_surface_attach(wl_surface, buffer, 0, 0);
+	wl_surface_commit(wl_surface);
 }
 
 static void
@@ -345,7 +366,6 @@ main(int argc, char **argv)
 {
 	char *namespace = "wlroots";
 	char *fontstr = "";
-	int exclusive_zone = -1;
 	int c;
 	uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
 	uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
@@ -415,12 +435,9 @@ main(int argc, char **argv)
 
 	zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 	zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);
-	if (exclusive_zone > 0) {
-		zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, height);
-	} else {
-		zwlr_layer_surface_v1_set_exclusive_zone(layer_surface,
-				exclusive_zone);
-	}
+	if (exclusive_zone > 0)
+		exclusive_zone = height;
+	zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, exclusive_zone);
 	wl_surface_commit(wl_surface);
 	wl_display_roundtrip(display);
 

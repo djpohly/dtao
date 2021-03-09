@@ -106,8 +106,8 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 	return end;
 }
 
-static uint32_t *
-new_buffer(struct wl_buffer **pbuf)
+static struct wl_buffer *
+draw_frame(char *text)
 {
 	/* Allocate buffer to be attached to the surface */
 	int fd = allocate_shm_file(bufsize);
@@ -124,20 +124,9 @@ new_buffer(struct wl_buffer **pbuf)
 	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, bufsize);
 	struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
 			width, height, stride, WL_SHM_FORMAT_ARGB8888);
+	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
 	wl_shm_pool_destroy(pool);
 	close(fd);
-	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
-	*pbuf = buffer;
-	return data;
-}
-
-static struct wl_buffer *
-draw_frame(char *text)
-{
-	struct wl_buffer *buffer;
-	uint32_t *data = new_buffer(&buffer);
-	if (!data)
-		return NULL;
 
 	/* Colors (premultiplied!) */
 	pixman_color_t bgcolor = {

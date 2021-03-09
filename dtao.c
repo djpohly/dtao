@@ -24,7 +24,6 @@
 static struct wl_display *display;
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
-static struct xdg_wm_base *xdg_wm_base;
 static struct zwlr_layer_shell_v1 *layer_shell;
 static struct wl_buffer *buffer;
 
@@ -286,9 +285,6 @@ handle_global(void *data, struct wl_registry *registry,
 	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
 		layer_shell = wl_registry_bind(registry, name,
 				&zwlr_layer_shell_v1_interface, 1);
-	} else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
-		xdg_wm_base = wl_registry_bind(registry, name,
-				&xdg_wm_base_interface, 1);
 	}
 }
 
@@ -430,7 +426,15 @@ main(int argc, char **argv)
 
 	event_loop();
 
+	/* Clean everything up */
+	zwlr_layer_surface_v1_destroy(layer_surface);
+	wl_surface_destroy(wl_surface);
+	zwlr_layer_shell_v1_destroy(layer_shell);
 	fcft_destroy(font);
+	wl_shm_destroy(shm);
+	wl_compositor_destroy(compositor);
+	wl_registry_destroy(registry);
+	wl_display_disconnect(display);
 
 	return 0;
 }

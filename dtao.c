@@ -158,6 +158,7 @@ draw_frame(char *text)
 	struct wl_shm_pool *pool = wl_shm_create_pool(shm, fd, size);
 	buffer = wl_shm_pool_create_buffer(pool, 0,
 			width, height, stride, WL_SHM_FORMAT_ARGB8888);
+	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
 	wl_shm_pool_destroy(pool);
 	close(fd);
 
@@ -265,7 +266,6 @@ draw_frame(char *text)
 	pixman_image_unref(background);
 	pixman_image_unref(bar);
 	munmap(data, size);
-	wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
 	wl_surface_attach(wl_surface, buffer, 0, 0);
 	wl_surface_commit(wl_surface);
 }

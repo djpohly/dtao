@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <ctype.h>
 #include <errno.h>
 #include <fcft/fcft.h>
 #include <fcntl.h>
@@ -70,8 +71,37 @@ allocate_shm_file(size_t size)
 	return fd;
 }
 
+/* Color parsing logic adapted from [sway] */
+static int
+parse_color(const char *str, pixman_color_t *clr)
+{
+	if (*str == '#')
+		str++;
+	int len = strlen(str);
+
+	// Disallows "0x" prefix that strtoul would ignore
+	if ((len != 6 && len != 8) || !isxdigit(str[0]) || !isxdigit(str[1]))
+		return 1;
+
+	char *ptr;
+	uint32_t parsed = strtoul(str, &ptr, 16);
+	if (*ptr)
+		return 1;
+
+	if (len == 8) {
+		clr->alpha = (parsed & 0xff) * 0x101;
+		parsed >>= 8;
+	}
+	clr->blue = (parsed & 0xff) * 0x101;
+	parsed >>= 8;
+	clr->green = (parsed & 0xff) * 0x101;
+	parsed >>= 8;
+	clr->red = (parsed & 0xff) * 0x101;
+	return 0;
+}
+
 static char *
-handle_cmd(char *cmd, pixman_color_t *bg)
+handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg)
 {
 	char *arg, *end;
 
@@ -82,29 +112,28 @@ handle_cmd(char *cmd, pixman_color_t *bg)
 	*end = '\0';
 
 	if (!strcmp(cmd, "bg")) {
-		uint16_t r, g, b, a;
 		if (!*arg) {
 			/* XXX set default background color */
-			bg->red = bg->green = bg->blue = 0x0000;
+			bg->red = bg->green = bg->blue = 0x1010;
 			bg->alpha = 0xffff;
-			return end;
+		} else if (parse_color(arg, bg)) {
+			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
-		int ret = sscanf(arg, "#%02hx%02hx%02hx%02hx", &r, &g, &b, &a);
-		fprintf(stderr, "ret=%d\n", ret);
-		if (ret < 3) {
-			fprintf(stderr, "Malformed bg command\n");
-			return end;
+	} else if (!strcmp(cmd, "fg")) {
+		if (!*arg) {
+			/* XXX set default foreground color */
+			fg->red = fg->green = fg->blue = 0xb3b3;
+			fg->alpha = 0xffff;
+		} else if (parse_color(arg, fg)) {
+			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
-		if (ret == 3)
-			a = 0xff;
-		bg->red = r | r << 8;
-		bg->green = g | g << 8;
-		bg->blue = b | b << 8;
-		bg->alpha = a | a << 8;
 	} else {
 		fprintf(stderr, "Unrecognized command \"%s\"\n", cmd);
 	}
 
+	/* Restore string for later redraws */
+	*--arg = '(';
+	*end = ')';
 	return end;
 }
 
@@ -169,7 +198,9 @@ draw_frame(char *text)
 		if (state == UTF8_ACCEPT && *p == '^') {
 			p++;
 			if (*p != '^') {
-				p = handle_cmd(p, &textbgcolor);
+				p = handle_cmd(p, &textbgcolor, &textfgcolor);
+				pixman_image_unref(fgfill);
+				fgfill = pixman_image_create_solid_fill(&textfgcolor);
 				continue;
 			}
 		}

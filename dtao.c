@@ -18,6 +18,8 @@
 
 #define BARF(fmt, ...)		do { fprintf(stderr, fmt "\n", ##__VA_ARGS__); exit(EXIT_FAILURE); } while (0)
 #define EBARF(fmt, ...)		BARF(fmt ": %s", ##__VA_ARGS__, strerror(errno))
+#define MIN(a, b)               ((a) < (b) ? (a) : (b))
+#define MAX(a, b)               ((a) > (b) ? (a) : (b))
 
 #define MAX_LINE_LEN 8192
 
@@ -159,8 +161,7 @@ draw_frame(char *text)
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
 
 	/* Start drawing in top left (ypos sets the text baseline) */
-	int xpos = 0, ypos = font->ascent;
-	int lastbgx = 0;
+	uint32_t xpos = 0, ypos = font->ascent;
 
 	uint32_t codepoint, lastcp = 0, state = UTF8_ACCEPT;
 	for (char *p = text; *p; p++) {
@@ -208,6 +209,16 @@ draw_frame(char *text)
 				xpos + glyph->x, ypos - glyph->y, glyph->width, glyph->height);
 		}
 
+		if (xpos < width) {
+			pixman_image_fill_boxes(PIXMAN_OP_OVER, background,
+					&textbgcolor, 1, &(pixman_box32_t){
+						.x1 = xpos,
+						.x2 = MIN(xpos + glyph->advance.x, width),
+						.y1 = 0,
+						.y2 = height,
+					});
+		}
+
 		/* increment pen position */
 		xpos += glyph->advance.x;
 		ypos += glyph->advance.y;
@@ -216,11 +227,6 @@ draw_frame(char *text)
 
 	if (state != UTF8_ACCEPT)
 		fprintf(stderr, "malformed UTF-8 sequence\n");
-
-	/* Example - something like this could be used for ^bg() */
-	pixman_box32_t bgbox = {.x1 = lastbgx, .x2 = xpos, .y1 = 0, .y2 = height};
-	pixman_image_fill_boxes(PIXMAN_OP_SRC, background, &textbgcolor, 1, &bgbox);
-	lastbgx = xpos;
 
 	/* Draw background and foreground on bar */
 	pixman_image_composite32(PIXMAN_OP_OVER, background, NULL, bar, 0, 0, 0, 0,

@@ -196,7 +196,7 @@ draw_frame(char *text)
 
 	/* Text background and foreground layers */
 	pixman_image_t *background = pixman_image_create_bits(PIXMAN_a8r8g8b8,
-			width, height, data, width * 4);
+			width, height, NULL, width * 4);
 	pixman_image_t *foreground = pixman_image_create_bits(PIXMAN_a8r8g8b8,
 			width, height, NULL, width * 4);
 

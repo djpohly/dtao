@@ -203,7 +203,7 @@ draw_frame(char *text)
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
 
 	/* Start drawing in top left (ypos sets the text baseline) */
-	uint32_t xpos = 0, ypos = font->ascent;
+	uint32_t xpos = 0, ypos = font->ascent, maxxpos = 0;
 
 	uint32_t codepoint, lastcp = 0, state = UTF8_ACCEPT;
 	for (char *p = text; *p; p++) {
@@ -266,6 +266,7 @@ draw_frame(char *text)
 		/* increment pen position */
 		xpos += glyph->advance.x;
 		ypos += glyph->advance.y;
+		maxxpos = MAX(maxxpos, xpos);
 	}
 	pixman_image_unref(fgfill);
 
@@ -273,10 +274,22 @@ draw_frame(char *text)
 		fprintf(stderr, "malformed UTF-8 sequence\n");
 
 	/* Draw background and foreground on bar */
+	int32_t xdraw;
+	switch (titlealign) {
+		case ALIGN_L:
+			xdraw = 0;
+			break;
+		case ALIGN_R:
+			xdraw = width - maxxpos;
+			break;
+		case ALIGN_C:
+			xdraw = (width - maxxpos) / 2;
+			break;
+	}
 	pixman_image_composite32(PIXMAN_OP_OVER, background, NULL, bar, 0, 0, 0, 0,
-			0, 0, width, height);
+			xdraw, 0, width, height);
 	pixman_image_composite32(PIXMAN_OP_OVER, foreground, NULL, bar, 0, 0, 0, 0,
-			0, 0, width, height);
+			xdraw, 0, width, height);
 
 	pixman_image_unref(foreground);
 	pixman_image_unref(background);

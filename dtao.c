@@ -24,7 +24,6 @@
 
 #define MAX_LINE_LEN 8192
 
-enum expand { EXPAND_NONE, EXPAND_L, EXPAND_R };
 enum menumode { MENU_NONE, MENU_V, MENU_H };
 enum align { ALIGN_C, ALIGN_L, ALIGN_R };
 
@@ -45,9 +44,9 @@ static int lines;
 static int persist;
 static bool unified;
 static int exclusive_zone = -1;
-static enum expand expand;
 static enum menumode menumode;
 static enum align titlealign, subalign;
+static bool expand;
 static bool run_display = true;
 
 static struct fcft_font *font;
@@ -190,9 +189,10 @@ draw_frame(char *text)
 	/* Pixman image corresponding to main buffer */
 	pixman_image_t *bar = pixman_image_create_bits(PIXMAN_a8r8g8b8,
 			width, height, data, width * 4);
-	/* Fill bar with background color */
-	pixman_image_fill_boxes(PIXMAN_OP_SRC, bar, &bgcolor, 1,
-			&(pixman_box32_t) {.x1 = 0, .x2 = width, .y1 = 0, .y2 = height});
+	/* Fill bar with background color if bar should extend beyond text */
+	if (!expand)
+		pixman_image_fill_boxes(PIXMAN_OP_SRC, bar, &bgcolor, 1,
+				&(pixman_box32_t) {.x1 = 0, .x2 = width, .y1 = 0, .y2 = height});
 
 	/* Text background and foreground layers */
 	pixman_image_t *background = pixman_image_create_bits(PIXMAN_a8r8g8b8,
@@ -441,12 +441,13 @@ main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-expand")) {
 			if (++i >= argc)
 				BARF("option -expand requires an argument");
+			expand = true;
 			if (argv[i][0] == 'l')
-				expand = EXPAND_L;
+				titlealign = ALIGN_R;
 			else if (argv[i][0] == 'r')
-				expand = EXPAND_R;
-			else
-				expand = EXPAND_NONE;
+				titlealign = ALIGN_L;
+			else if (argv[i][0] == 'c')
+				titlealign = ALIGN_C;
 		} else if (!strcmp(argv[i], "-fg")) {
 			if (++i >= argc)
 				BARF("option -fg requires an argument");
@@ -487,12 +488,15 @@ main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-ta")) {
 			if (++i >= argc)
 				BARF("option -ta requires an argument");
-			if (argv[i][0] == 'l')
-				titlealign = ALIGN_L;
-			else if (argv[i][0] == 'r')
-				titlealign = ALIGN_R;
-			else
-				titlealign = ALIGN_C;
+			/* Expand overrides alignment */
+			if (!expand) {
+				if (argv[i][0] == 'l')
+					titlealign = ALIGN_L;
+				else if (argv[i][0] == 'r')
+					titlealign = ALIGN_R;
+				else
+					titlealign = ALIGN_C;
+			}
 		} else if (!strcmp(argv[i], "-tw")) {
 			if (++i >= argc)
 				BARF("option -tw requires an argument");

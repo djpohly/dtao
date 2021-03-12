@@ -375,8 +375,8 @@ read_stdin(void)
 	char *end;
 	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
 	if (b < 0)
-		perror("read");
-	if (b <= 0) {
+		EBARF("read");
+	if (b == 0) {
 		run_display = 0;
 		return;
 	}

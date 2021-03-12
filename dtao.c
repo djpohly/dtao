@@ -24,6 +24,10 @@
 
 #define MAX_LINE_LEN 8192
 
+enum expand { EXPAND_NONE, EXPAND_L, EXPAND_R };
+enum menumode { MENU_NONE, MENU_V, MENU_H };
+enum align { ALIGN_C, ALIGN_L, ALIGN_R };
+
 static struct wl_display *display;
 static struct wl_compositor *compositor;
 static struct wl_shm *shm;
@@ -35,12 +39,32 @@ static struct wl_surface *wl_surface;
 
 static uint32_t output = UINT32_MAX;
 
-static uint32_t width, height, stride, bufsize;
+static uint32_t width, height, titlewidth;
+static uint32_t stride, bufsize;
+static int lines;
+static int persist;
+static bool unified;
 static int exclusive_zone = -1;
+static enum expand expand;
+static enum menumode menumode;
+static enum align titlealign, subalign;
 static bool run_display = true;
 
 static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
+static pixman_color_t
+	bgcolor = {
+		.red = 0x1111,
+		.green = 0x1111,
+		.blue = 0x1111,
+		.alpha = 0xffff,
+	},
+	fgcolor = {
+		.red = 0xb3b3,
+		.green = 0xb3b3,
+		.blue = 0xb3b3,
+		.alpha = 0xffff,
+	};
 
 static void
 wl_buffer_release(void *data, struct wl_buffer *wl_buffer)
@@ -91,12 +115,12 @@ parse_color(const char *str, pixman_color_t *clr)
 	if (len == 8) {
 		clr->alpha = (parsed & 0xff) * 0x101;
 		parsed >>= 8;
+	} else {
+		clr->alpha = 0xffff;
 	}
-	clr->blue = (parsed & 0xff) * 0x101;
-	parsed >>= 8;
-	clr->green = (parsed & 0xff) * 0x101;
-	parsed >>= 8;
-	clr->red = (parsed & 0xff) * 0x101;
+	clr->red =   ((parsed >> 16) & 0xff) * 0x101;
+	clr->green = ((parsed >>  8) & 0xff) * 0x101;
+	clr->blue =  ((parsed >>  0) & 0xff) * 0x101;
 	return 0;
 }
 
@@ -160,19 +184,8 @@ draw_frame(char *text)
 	close(fd);
 
 	/* Colors (premultiplied!) */
-	pixman_color_t bgcolor = {
-		.red = 0x8000,
-		.green = 0x7000,
-		.blue = 0xd000,
-		.alpha = 0xffff,
-	};
 	pixman_color_t textbgcolor = bgcolor;
-	pixman_color_t textfgcolor = {
-		.red = 0x0000,
-		.green = 0x0000,
-		.blue = 0x0000,
-		.alpha = 0x8fff,
-	};
+	pixman_color_t textfgcolor = fgcolor;
 
 	/* Pixman image corresponding to main buffer */
 	pixman_image_t *bar = pixman_image_create_bits(PIXMAN_a8r8g8b8,
@@ -392,36 +405,99 @@ main(int argc, char **argv)
 {
 	char *namespace = "wlroots";
 	char *fontstr = "";
-	int c;
+	char *actionstr = "";
 	uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
 	uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-	while ((c = getopt(argc, argv, "bf:h:o:w:x")) != -1) {
-		switch (c) {
-			case 'b':
-				anchor ^= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-					ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
-				break;
-			case 'f':
-				fontstr = optarg;
-				break;
-			case 'h':
-				height = atoi(optarg);
-				break;
-			case 'o':
-				output = atoi(optarg);
-				break;
-			case 'w':
-				width = atoi(optarg);
-				break;
-			case 'x':
-				// -x: avoid other exclusive zones
-				// -xx: request exclusive zone for ourselves
-				exclusive_zone++;
-				break;
-			default:
-				break;
+
+	/* Parse options */
+	for (int i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "-b")) {
+			anchor ^= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+				ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+		} else if (!strcmp(argv[i], "-bg")) {
+			if (++i >= argc)
+				BARF("option -bg requires an argument");
+			if (parse_color(argv[i], &bgcolor))
+				BARF("malformed color string for -bg");
+		} else if (!strcmp(argv[i], "-e")) {
+			if (++i >= argc)
+				BARF("option -e requires an argument");
+			actionstr = argv[i];
+		} else if (!strcmp(argv[i], "-expand")) {
+			if (++i >= argc)
+				BARF("option -expand requires an argument");
+			if (argv[i][0] == 'l')
+				expand = EXPAND_L;
+			else if (argv[i][0] == 'r')
+				expand = EXPAND_R;
+			else
+				expand = EXPAND_NONE;
+		} else if (!strcmp(argv[i], "-fg")) {
+			if (++i >= argc)
+				BARF("option -fg requires an argument");
+			if (parse_color(argv[i], &fgcolor))
+				BARF("malformed color string for -fg");
+		} else if (!strcmp(argv[i], "-fn")) {
+			if (++i >= argc)
+				BARF("option -fn requires an argument");
+			fontstr = argv[i];
+		} else if (!strcmp(argv[i], "-h")) {
+			if (++i >= argc)
+				BARF("option -h requires an argument");
+			height = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-l")) {
+			if (++i >= argc)
+				BARF("option -l requires an argument");
+			lines = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-m")) {
+			if (++i >= argc)
+				BARF("option -m requires an argument");
+			if (argv[i][0] == 'h')
+				menumode = MENU_H;
+			else
+				menumode = MENU_V;
+		} else if (!strcmp(argv[i], "-p")) {
+			if (++i >= argc)
+				BARF("option -p requires an argument");
+			persist = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-sa")) {
+			if (++i >= argc)
+				BARF("option -sa requires an argument");
+			if (argv[i][0] == 'l')
+				subalign = ALIGN_L;
+			else if (argv[i][0] == 'r')
+				subalign = ALIGN_R;
+			else
+				subalign = ALIGN_C;
+		} else if (!strcmp(argv[i], "-ta")) {
+			if (++i >= argc)
+				BARF("option -ta requires an argument");
+			if (argv[i][0] == 'l')
+				titlealign = ALIGN_L;
+			else if (argv[i][0] == 'r')
+				titlealign = ALIGN_R;
+			else
+				titlealign = ALIGN_C;
+		} else if (!strcmp(argv[i], "-tw")) {
+			if (++i >= argc)
+				BARF("option -tw requires an argument");
+			titlewidth = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-u")) {
+			unified = 1;
+		} else if (!strcmp(argv[i], "-w")) {
+			if (++i >= argc)
+				BARF("option -w requires an argument");
+			width = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-xs")) {
+			if (++i >= argc)
+				BARF("option -xs requires an argument");
+			output = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-z")) {
+			exclusive_zone++;
+		} else {
+			BARF("option '%s' not recognized", argv[i]);
 		}
 	}
 

@@ -14,24 +14,54 @@ dtao(1) -- general-purpose status, messaging, and notification bar for Wayland
 ## OPTIONS
 
 * `-b`:
-    [EXPERIMENTAL] toggle bar position from the top to bottom of the screen (and vice versa)
+    [EXPERIMENTAL] toggle bar position between top and bottom of screen
 
-* `-f` <FONT>:
-    display text using font specified by <FONT> (as parsed by Fontconfig)
+* `-bg` <COLOR>:
+    set default background color
 
-* `-h` <PX>:
-    set bar height to <PX> pixels
+* `-e` <STRING>:
+    define actions
 
-* `-o` <OUTPUT>:
-    display bar on monitor <OUTPUT>
+* `-expand` {`l`|`r`}:
+    dynamically adjust left/right side of title window to fit text
+
+* `-fg` <COLOR>:
+    set default foreground color
+
+* `-fn` <FONT>:
+    set display font (using Fontconfig string)
+
+* `-h` <PIXEL>:
+    set window height
+
+* `-l` <LINES>:
+    number of lines in the sub-window
+
+* `-m` {`v`|`h`}:
+    enable menu mode, vertical (default) or horizontal
 
 * `-p` <SEC>:
-    persist window indefinitely after EOF on stdin, or for <SEC> seconds if given
+    persist for <SEC> seconds after EOF on stdin, 0 for indefinitely
 
-* `-w` <PX>:
-    set bar width to <PX> pixels
+* `-sa` {`l`|`c`|`r`}:
+    set alignment for sub-window
 
-* `-x`:
+* `-ta` {`l`|`c`|`r`}:
+    set alignment for title window
+
+* `-tw` <PIXEL>:
+    set title window width
+
+* `-u`:
+    wrap to title-window after sub-window fills
+
+* `-w` <PIXEL>:
+    set window width
+
+* `-xs` <NUM>:
+    display on output number <NUM>
+
+* `-z`:
     when used once: bar will not cover "exclusive zones" of other layer-shell surfaces; when used twice: bar will request its own exclusive zone
 
 

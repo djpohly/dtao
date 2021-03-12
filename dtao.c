@@ -22,6 +22,15 @@
 #define MIN(a, b)               ((a) < (b) ? (a) : (b))
 #define MAX(a, b)               ((a) > (b) ? (a) : (b))
 
+#define PROGRAM "dtao"
+#define VERSION "0.1"
+#define COPYRIGHT "copyright 2021 Devin J. Pohly and dtao team"
+#define USAGE \
+	"usage: dtao [-v] [-p seconds] [-m <v|h>] [-ta <l|c|r>] [-sa <l|c|r>]\n" \
+	"            [-w <pixel>] [-h <pixel>] [-tw <pixel>] [-l <lines>] [-u]\n" \
+	"            [-e <string>] [-fn <font>] [-bg <color>] [-fg <color>]\n" \
+	"            [-expand <l|c|r>] [-z [-z]] [-xs <screen>]"
+
 #define MAX_LINE_LEN 8192
 
 enum menumode { MENU_NONE, MENU_V, MENU_H };
@@ -503,6 +512,9 @@ main(int argc, char **argv)
 			titlewidth = atoi(argv[i]);
 		} else if (!strcmp(argv[i], "-u")) {
 			unified = 1;
+		} else if (!strcmp(argv[i], "-v")) {
+			fprintf(stderr, PROGRAM " " VERSION ", " COPYRIGHT "\n");
+			return 0;
 		} else if (!strcmp(argv[i], "-w")) {
 			if (++i >= argc)
 				BARF("option -w requires an argument");
@@ -514,7 +526,7 @@ main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-z")) {
 			exclusive_zone++;
 		} else {
-			BARF("option '%s' not recognized", argv[i]);
+			BARF("option '%s' not recognized\n%s", argv[i], USAGE);
 		}
 	}
 

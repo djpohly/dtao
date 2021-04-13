@@ -302,6 +302,7 @@ layer_surface_configure(void *data,
 	if (!buffer)
 		return;
 	wl_surface_attach(wl_surface, buffer, 0, 0);
+	wl_surface_damage(wl_surface, 0, 0, width, height);
 	wl_surface_commit(wl_surface);
 }
 
@@ -362,11 +363,14 @@ read_stdin(void)
 	char *end;
 	while ((end = memchr(curline, '\n', linerem))) {
 		*end++ = '\0';
+
 		struct wl_buffer *buffer = draw_frame(curline);
 		if (!buffer)
 			continue;
 		wl_surface_attach(wl_surface, buffer, 0, 0);
+		wl_surface_damage(wl_surface, 0, 0, width, height);
 		wl_surface_commit(wl_surface);
+
 		linerem -= end - curline;
 		curline = end;
 	}

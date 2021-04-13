@@ -137,17 +137,13 @@ handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg)
 
 	if (!strcmp(cmd, "bg")) {
 		if (!*arg) {
-			/* XXX set default background color */
-			bg->red = bg->green = bg->blue = 0x1010;
-			bg->alpha = 0xffff;
+			*bg = bgcolor;
 		} else if (parse_color(arg, bg)) {
 			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
 	} else if (!strcmp(cmd, "fg")) {
 		if (!*arg) {
-			/* XXX set default foreground color */
-			fg->red = fg->green = fg->blue = 0xb3b3;
-			fg->alpha = 0xffff;
+			*fg = fgcolor;
 		} else if (parse_color(arg, fg)) {
 			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}

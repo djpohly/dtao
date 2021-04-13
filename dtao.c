@@ -364,7 +364,7 @@ read_stdin(void)
 		*end++ = '\0';
 		struct wl_buffer *buffer = draw_frame(curline);
 		if (!buffer)
-			return;
+			continue;
 		wl_surface_attach(wl_surface, buffer, 0, 0);
 		wl_surface_commit(wl_surface);
 		linerem -= end - curline;

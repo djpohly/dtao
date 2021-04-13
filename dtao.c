@@ -52,6 +52,7 @@ static bool run_display = true;
 
 static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
+static int linerem;
 static pixman_color_t
 	bgcolor = {
 		.red = 0x1111,
@@ -346,7 +347,7 @@ static const struct wl_registry_listener registry_listener = {.global = handle_g
 static void
 read_stdin(void)
 {
-	char *end;
+	/* Read as much data as we can into line buffer */
 	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
 	if (b < 0)
 		perror("read");
@@ -354,18 +355,23 @@ read_stdin(void)
 		run_display = 0;
 		return;
 	}
-	/* Terminate string after first line */
-	/* XXX handle multiple lines here */
-	if ((end = memchr(line, '\n', b))) {
-		*end = '\0';
-	} else {
-		line[b] = '\0';
+	linerem += b;
+
+	/* XXX need special handling for hitting MAX_LINE_LEN without \n */
+	char *curline = line;
+	char *end;
+	while ((end = memchr(curline, '\n', linerem))) {
+		*end++ = '\0';
+		struct wl_buffer *buffer = draw_frame(curline);
+		if (!buffer)
+			return;
+		wl_surface_attach(wl_surface, buffer, 0, 0);
+		wl_surface_commit(wl_surface);
+		linerem -= end - curline;
+		curline = end;
 	}
-	struct wl_buffer *buffer = draw_frame(line);
-	if (!buffer)
-		return;
-	wl_surface_attach(wl_surface, buffer, 0, 0);
-	wl_surface_commit(wl_surface);
+	if (linerem && curline != line)
+		memmove(line, curline, linerem);
 }
 
 static void

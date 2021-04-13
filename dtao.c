@@ -22,9 +22,17 @@
 #define MIN(a, b)               ((a) < (b) ? (a) : (b))
 #define MAX(a, b)               ((a) > (b) ? (a) : (b))
 
+#define PROGRAM "dtao"
+#define VERSION "0.1"
+#define COPYRIGHT "copyright 2021 Devin J. Pohly and dtao team"
+#define USAGE \
+	"usage: dtao [-v] [-p seconds] [-m <v|h>] [-ta <l|c|r>] [-sa <l|c|r>]\n" \
+	"            [-w <pixel>] [-h <pixel>] [-tw <pixel>] [-l <lines>] [-u]\n" \
+	"            [-e <string>] [-fn <font>] [-bg <color>] [-fg <color>]\n" \
+	"            [-expand <l|c|r>] [-z [-z]] [-xs <screen>]"
+
 #define MAX_LINE_LEN 8192
 
-enum expand { EXPAND_NONE, EXPAND_L, EXPAND_R };
 enum menumode { MENU_NONE, MENU_V, MENU_H };
 enum align { ALIGN_C, ALIGN_L, ALIGN_R };
 
@@ -45,9 +53,9 @@ static int lines;
 static int persist;
 static bool unified;
 static int exclusive_zone = -1;
-static enum expand expand;
 static enum menumode menumode;
 static enum align titlealign, subalign;
+static bool expand;
 static bool run_display = true;
 
 static struct fcft_font *font;
@@ -187,20 +195,21 @@ draw_frame(char *text)
 	/* Pixman image corresponding to main buffer */
 	pixman_image_t *bar = pixman_image_create_bits(PIXMAN_a8r8g8b8,
 			width, height, data, width * 4);
-	/* Fill bar with background color */
-	pixman_image_fill_boxes(PIXMAN_OP_SRC, bar, &bgcolor, 1,
-			&(pixman_box32_t) {.x1 = 0, .x2 = width, .y1 = 0, .y2 = height});
+	/* Fill bar with background color if bar should extend beyond text */
+	if (!expand)
+		pixman_image_fill_boxes(PIXMAN_OP_SRC, bar, &bgcolor, 1,
+				&(pixman_box32_t) {.x1 = 0, .x2 = width, .y1 = 0, .y2 = height});
 
 	/* Text background and foreground layers */
 	pixman_image_t *background = pixman_image_create_bits(PIXMAN_a8r8g8b8,
-			width, height, data, width * 4);
+			width, height, NULL, width * 4);
 	pixman_image_t *foreground = pixman_image_create_bits(PIXMAN_a8r8g8b8,
 			width, height, NULL, width * 4);
 
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
 
 	/* Start drawing in top left (ypos sets the text baseline) */
-	uint32_t xpos = 0, ypos = font->ascent;
+	uint32_t xpos = 0, ypos = font->ascent, maxxpos = 0;
 
 	uint32_t codepoint, lastcp = 0, state = UTF8_ACCEPT;
 	for (char *p = text; *p; p++) {
@@ -263,6 +272,7 @@ draw_frame(char *text)
 		/* increment pen position */
 		xpos += glyph->advance.x;
 		ypos += glyph->advance.y;
+		maxxpos = MAX(maxxpos, xpos);
 	}
 	pixman_image_unref(fgfill);
 
@@ -270,10 +280,22 @@ draw_frame(char *text)
 		fprintf(stderr, "malformed UTF-8 sequence\n");
 
 	/* Draw background and foreground on bar */
+	int32_t xdraw;
+	switch (titlealign) {
+		case ALIGN_L:
+			xdraw = 0;
+			break;
+		case ALIGN_R:
+			xdraw = width - maxxpos;
+			break;
+		case ALIGN_C:
+			xdraw = (width - maxxpos) / 2;
+			break;
+	}
 	pixman_image_composite32(PIXMAN_OP_OVER, background, NULL, bar, 0, 0, 0, 0,
-			0, 0, width, height);
+			xdraw, 0, width, height);
 	pixman_image_composite32(PIXMAN_OP_OVER, foreground, NULL, bar, 0, 0, 0, 0,
-			0, 0, width, height);
+			xdraw, 0, width, height);
 
 	pixman_image_unref(foreground);
 	pixman_image_unref(background);
@@ -351,8 +373,8 @@ read_stdin(void)
 	/* Read as much data as we can into line buffer */
 	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
 	if (b < 0)
-		perror("read");
-	if (b <= 0) {
+		EBARF("read");
+	if (b == 0) {
 		run_display = 0;
 		return;
 	}
@@ -434,12 +456,13 @@ main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-expand")) {
 			if (++i >= argc)
 				BARF("option -expand requires an argument");
+			expand = true;
 			if (argv[i][0] == 'l')
-				expand = EXPAND_L;
+				titlealign = ALIGN_R;
 			else if (argv[i][0] == 'r')
-				expand = EXPAND_R;
-			else
-				expand = EXPAND_NONE;
+				titlealign = ALIGN_L;
+			else if (argv[i][0] == 'c')
+				titlealign = ALIGN_C;
 		} else if (!strcmp(argv[i], "-fg")) {
 			if (++i >= argc)
 				BARF("option -fg requires an argument");
@@ -480,18 +503,24 @@ main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-ta")) {
 			if (++i >= argc)
 				BARF("option -ta requires an argument");
-			if (argv[i][0] == 'l')
-				titlealign = ALIGN_L;
-			else if (argv[i][0] == 'r')
-				titlealign = ALIGN_R;
-			else
-				titlealign = ALIGN_C;
+			/* Expand overrides alignment */
+			if (!expand) {
+				if (argv[i][0] == 'l')
+					titlealign = ALIGN_L;
+				else if (argv[i][0] == 'r')
+					titlealign = ALIGN_R;
+				else
+					titlealign = ALIGN_C;
+			}
 		} else if (!strcmp(argv[i], "-tw")) {
 			if (++i >= argc)
 				BARF("option -tw requires an argument");
 			titlewidth = atoi(argv[i]);
 		} else if (!strcmp(argv[i], "-u")) {
 			unified = 1;
+		} else if (!strcmp(argv[i], "-v")) {
+			fprintf(stderr, PROGRAM " " VERSION ", " COPYRIGHT "\n");
+			return 0;
 		} else if (!strcmp(argv[i], "-w")) {
 			if (++i >= argc)
 				BARF("option -w requires an argument");
@@ -503,7 +532,7 @@ main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-z")) {
 			exclusive_zone++;
 		} else {
-			BARF("option '%s' not recognized", argv[i]);
+			BARF("option '%s' not recognized\n%s", argv[i], USAGE);
 		}
 	}
 

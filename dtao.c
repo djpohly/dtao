@@ -60,6 +60,7 @@ static bool run_display = true;
 
 static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
+static char lastline[MAX_LINE_LEN];
 static int linerem;
 static pixman_color_t
 	bgcolor = {
@@ -320,7 +321,7 @@ layer_surface_configure(void *data,
 	zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, exclusive_zone);
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
-	struct wl_buffer *buffer = draw_frame(line);
+	struct wl_buffer *buffer = draw_frame(lastline);
 	if (!buffer)
 		return;
 	wl_surface_attach(wl_surface, buffer, 0, 0);
@@ -380,24 +381,31 @@ read_stdin(void)
 	}
 	linerem += b;
 
+	/* Handle each line in the buffer in turn */
 	/* XXX need special handling for hitting MAX_LINE_LEN without \n */
 	char *curline = line;
 	char *end;
+	struct wl_buffer *buffer = NULL;
 	while ((end = memchr(curline, '\n', linerem))) {
 		*end++ = '\0';
+		/* Keep last line for redrawing purposes */
+		strncpy(lastline, curline, linerem);
 
-		struct wl_buffer *buffer = draw_frame(curline);
-		if (!buffer)
+		if (!(buffer = draw_frame(lastline)))
 			continue;
-		wl_surface_attach(wl_surface, buffer, 0, 0);
-		wl_surface_damage_buffer(wl_surface, 0, 0, width, height);
-		wl_surface_commit(wl_surface);
 
 		linerem -= end - curline;
 		curline = end;
 	}
+	/* Shift any remaining data over */
 	if (linerem && curline != line)
 		memmove(line, curline, linerem);
+	/* Redraw if anything new was rendered */
+	if (buffer) {
+		wl_surface_attach(wl_surface, buffer, 0, 0);
+		wl_surface_damage_buffer(wl_surface, 0, 0, width, height);
+		wl_surface_commit(wl_surface);
+	}
 }
 
 static void

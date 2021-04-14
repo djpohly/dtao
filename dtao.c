@@ -58,6 +58,8 @@ static bool run_display = true;
 
 static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
+static char lastline[MAX_LINE_LEN];
+static int linerem;
 static pixman_color_t
 	bgcolor = {
 		.red = 0x1111,
@@ -143,17 +145,13 @@ handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg)
 
 	if (!strcmp(cmd, "bg")) {
 		if (!*arg) {
-			/* XXX set default background color */
-			bg->red = bg->green = bg->blue = 0x1010;
-			bg->alpha = 0xffff;
+			*bg = bgcolor;
 		} else if (parse_color(arg, bg)) {
 			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
 	} else if (!strcmp(cmd, "fg")) {
 		if (!*arg) {
-			/* XXX set default foreground color */
-			fg->red = fg->green = fg->blue = 0xb3b3;
-			fg->alpha = 0xffff;
+			*fg = fgcolor;
 		} else if (parse_color(arg, fg)) {
 			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
@@ -321,10 +319,11 @@ layer_surface_configure(void *data,
 	zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, exclusive_zone);
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
-	struct wl_buffer *buffer = draw_frame(line);
+	struct wl_buffer *buffer = draw_frame(lastline);
 	if (!buffer)
 		return;
 	wl_surface_attach(wl_surface, buffer, 0, 0);
+	wl_surface_damage_buffer(wl_surface, 0, 0, width, height);
 	wl_surface_commit(wl_surface);
 }
 
@@ -347,7 +346,7 @@ handle_global(void *data, struct wl_registry *registry,
 {
 	if (strcmp(interface, wl_compositor_interface.name) == 0) {
 		compositor = wl_registry_bind(registry, name,
-				&wl_compositor_interface, 1);
+				&wl_compositor_interface, 4);
 	} else if (strcmp(interface, wl_shm_interface.name) == 0) {
 		shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
@@ -370,7 +369,7 @@ static const struct wl_registry_listener registry_listener = {.global = handle_g
 static void
 read_stdin(void)
 {
-	char *end;
+	/* Read as much data as we can into line buffer */
 	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
 	if (b < 0)
 		EBARF("read");
@@ -378,18 +377,33 @@ read_stdin(void)
 		run_display = 0;
 		return;
 	}
-	/* Terminate string after first line */
-	/* XXX handle multiple lines here */
-	if ((end = memchr(line, '\n', b))) {
-		*end = '\0';
-	} else {
-		line[b] = '\0';
+	linerem += b;
+
+	/* Handle each line in the buffer in turn */
+	/* XXX need special handling for hitting MAX_LINE_LEN without \n */
+	char *curline = line;
+	char *end;
+	struct wl_buffer *buffer = NULL;
+	while ((end = memchr(curline, '\n', linerem))) {
+		*end++ = '\0';
+		/* Keep last line for redrawing purposes */
+		strncpy(lastline, curline, linerem);
+
+		if (!(buffer = draw_frame(lastline)))
+			continue;
+
+		linerem -= end - curline;
+		curline = end;
 	}
-	struct wl_buffer *buffer = draw_frame(line);
-	if (!buffer)
-		return;
-	wl_surface_attach(wl_surface, buffer, 0, 0);
-	wl_surface_commit(wl_surface);
+	/* Shift any remaining data over */
+	if (linerem && curline != line)
+		memmove(line, curline, linerem);
+	/* Redraw if anything new was rendered */
+	if (buffer) {
+		wl_surface_attach(wl_surface, buffer, 0, 0);
+		wl_surface_damage_buffer(wl_surface, 0, 0, width, height);
+		wl_surface_commit(wl_surface);
+	}
 }
 
 static void

@@ -10,6 +10,7 @@ This is (will be) a stdin-based general-purpose bar for Wayland, modeled after t
 * [fcft](https://codeberg.org/dnkl/fcft)
 * pixman
 * libwayland-client
+* ruby-ronn
 
 
 ## To-do list/contribution opportunities

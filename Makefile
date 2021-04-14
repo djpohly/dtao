@@ -8,6 +8,10 @@ all: $(BINS) $(MANS)
 clean:
 	$(RM) $(BINS) $(addsuffix .o,$(BINS))
 
+install: all
+	install -D -t $(PREFIX)/bin $(BINS)
+	install -Dm644 -t $(PREFIX)/share/man/man1 $(MANS)
+
 $(MANS): %: %.ronn
 	ronn -r $<
 
@@ -42,3 +46,5 @@ dtao: xdg-shell-protocol.o wlr-layer-shell-unstable-v1-protocol.o
 # Library dependencies
 dtao: CFLAGS+=$(shell pkg-config --cflags wayland-client fcft pixman-1)
 dtao: LDLIBS+=$(shell pkg-config --libs wayland-client fcft pixman-1) -lrt
+
+.PHONY: all clean install

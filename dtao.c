@@ -324,7 +324,7 @@ layer_surface_configure(void *data,
 	if (!buffer)
 		return;
 	wl_surface_attach(wl_surface, buffer, 0, 0);
-	wl_surface_damage(wl_surface, 0, 0, width, height);
+	wl_surface_damage_buffer(wl_surface, 0, 0, width, height);
 	wl_surface_commit(wl_surface);
 }
 
@@ -347,7 +347,7 @@ handle_global(void *data, struct wl_registry *registry,
 {
 	if (strcmp(interface, wl_compositor_interface.name) == 0) {
 		compositor = wl_registry_bind(registry, name,
-				&wl_compositor_interface, 1);
+				&wl_compositor_interface, 4);
 	} else if (strcmp(interface, wl_shm_interface.name) == 0) {
 		shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
@@ -390,7 +390,7 @@ read_stdin(void)
 		if (!buffer)
 			continue;
 		wl_surface_attach(wl_surface, buffer, 0, 0);
-		wl_surface_damage(wl_surface, 0, 0, width, height);
+		wl_surface_damage_buffer(wl_surface, 0, 0, width, height);
 		wl_surface_commit(wl_surface);
 
 		linerem -= end - curline;

@@ -33,7 +33,6 @@
 
 #define MAX_LINE_LEN 8192
 
-enum menumode { MENU_NONE, MENU_V, MENU_H };
 enum align { ALIGN_C, ALIGN_L, ALIGN_R };
 
 static struct wl_display *display;
@@ -53,7 +52,6 @@ static int lines;
 static int persist;
 static bool unified;
 static int exclusive_zone = -1;
-static enum menumode menumode;
 static enum align titlealign, subalign;
 static bool expand;
 static bool run_display = true;
@@ -499,13 +497,6 @@ main(int argc, char **argv)
 				layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
 			else
 				layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
-		} else if (!strcmp(argv[i], "-m")) {
-			if (++i >= argc)
-				BARF("option -m requires an argument");
-			if (argv[i][0] == 'h')
-				menumode = MENU_H;
-			else
-				menumode = MENU_V;
 		} else if (!strcmp(argv[i], "-p")) {
 			if (++i >= argc)
 				BARF("option -p requires an argument");

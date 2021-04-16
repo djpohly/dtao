@@ -37,6 +37,9 @@ dtao(1) -- general-purpose status, messaging, and notification bar for Wayland
 * `-l` <LINES>:
     number of lines in the sub-window
 
+* `-L` {`o`|`t`|`b`|`u`}
+    draw the bar in the overlay, top (default), bottom, or underlay/background layer
+
 * `-m` {`v`|`h`}:
     enable menu mode, vertical (default) or horizontal
 

@@ -442,7 +442,7 @@ main(int argc, char **argv)
 	char *namespace = "wlroots";
 	char *fontstr = "";
 	char *actionstr = "";
-	uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+	uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
 	uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
@@ -488,6 +488,17 @@ main(int argc, char **argv)
 			if (++i >= argc)
 				BARF("option -l requires an argument");
 			lines = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-L")) {
+			if (++i >= argc)
+				BARF("option -L requires an argument");
+			if (argv[i][0] == 'o')
+				layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+			else if (argv[i][0] == 'b')
+				layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+			else if (argv[i][0] == 'u')
+				layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+			else
+				layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
 		} else if (!strcmp(argv[i], "-m")) {
 			if (++i >= argc)
 				BARF("option -m requires an argument");

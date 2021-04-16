@@ -437,7 +437,7 @@ event_loop(void)
 int
 main(int argc, char **argv)
 {
-	char *namespace = "wlroots";
+	char *namespace = "dtao";
 	char *fontstr = "";
 	char *actionstr = "";
 	uint32_t layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;

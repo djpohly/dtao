@@ -44,7 +44,7 @@ static struct zwlr_layer_surface_v1 *layer_surface;
 static struct wl_output *wl_output;
 static struct wl_surface *wl_surface;
 
-static uint32_t output = UINT32_MAX;
+static int32_t output = -1;
 
 static uint32_t width, height, titlewidth;
 static uint32_t stride, bufsize;
@@ -350,14 +350,10 @@ handle_global(void *data, struct wl_registry *registry,
 	} else if (strcmp(interface, wl_shm_interface.name) == 0) {
 		shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
-		if (output != UINT32_MAX) {
-			if (!wl_output) {
-				wl_output = wl_registry_bind(registry, name,
-						&wl_output_interface, 1);
-			} else {
-				output--;
-			}
-		}
+		struct wl_output *o = wl_registry_bind(registry, name,
+				&wl_output_interface, 1);
+		if (output-- == 0)
+			wl_output = o;
 	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
 		layer_shell = wl_registry_bind(registry, name,
 				&zwlr_layer_shell_v1_interface, 1);
@@ -538,7 +534,8 @@ main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "-xs")) {
 			if (++i >= argc)
 				BARF("option -xs requires an argument");
-			output = atoi(argv[i]);
+			/* One-based to match dzen2 */
+			output = atoi(argv[i]) - 1;
 		} else if (!strcmp(argv[i], "-z")) {
 			exclusive_zone++;
 		} else {

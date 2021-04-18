@@ -579,9 +579,6 @@ main(int argc, char **argv)
 
 	zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 	zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);
-	if (exclusive_zone > 0)
-		exclusive_zone = height;
-	zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, exclusive_zone);
 	wl_surface_commit(wl_surface);
 	wl_display_roundtrip(display);
 

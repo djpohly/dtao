@@ -207,8 +207,9 @@ draw_frame(char *text)
 
 	pixman_image_t *fgfill = pixman_image_create_solid_fill(&textfgcolor);
 
-	/* Start drawing in top left (ypos sets the text baseline) */
-	uint32_t xpos = 0, ypos = font->ascent, maxxpos = 0;
+	/* Start drawing at center-left (ypos sets the text baseline) */
+	uint32_t xpos = 0, maxxpos = 0;
+	uint32_t ypos = (height + font->ascent - font->descent) / 2;
 
 	uint32_t codepoint, lastcp = 0, state = UTF8_ACCEPT;
 	for (char *p = text; *p; p++) {

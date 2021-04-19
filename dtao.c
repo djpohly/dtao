@@ -288,6 +288,7 @@ draw_frame(char *text)
 			xdraw = width - maxxpos;
 			break;
 		case ALIGN_C:
+		default:
 			xdraw = (width - maxxpos) / 2;
 			break;
 	}

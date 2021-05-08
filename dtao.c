@@ -368,7 +368,7 @@ static void
 read_stdin(void)
 {
 	/* Read as much data as we can into line buffer */
-	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
+	ssize_t b = read(STDIN_FILENO, line + linerem, MAX_LINE_LEN - 1 - linerem);
 	if (b < 0)
 		EBARF("read");
 	if (b == 0) {

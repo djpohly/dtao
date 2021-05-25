@@ -32,6 +32,7 @@
 	"            [-e <string>] [-fn <font>] [-bg <color>] [-fg <color>]\n" \
 	"            [-expand <l|c|r>] [-z [-z]] [-xs <screen>]"
 
+/* Includes the newline character */
 #define MAX_LINE_LEN 8192
 
 enum align { ALIGN_C, ALIGN_L, ALIGN_R };
@@ -61,6 +62,7 @@ static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
 static char lastline[MAX_LINE_LEN];
 static int linerem;
+static bool eat_line = false;
 static pixman_color_t
 	bgcolor = {
 		.red = 0x1111,
@@ -369,7 +371,7 @@ static void
 read_stdin(void)
 {
 	/* Read as much data as we can into line buffer */
-	ssize_t b = read(STDIN_FILENO, line, MAX_LINE_LEN - 1);
+	ssize_t b = read(STDIN_FILENO, line + linerem, MAX_LINE_LEN - linerem);
 	if (b < 0)
 		EBARF("read");
 	if (b == 0) {
@@ -379,24 +381,33 @@ read_stdin(void)
 	linerem += b;
 
 	/* Handle each line in the buffer in turn */
-	/* XXX need special handling for hitting MAX_LINE_LEN without \n */
-	char *curline = line;
-	char *end;
+	char *curline, *end;
 	struct wl_buffer *buffer = NULL;
-	while ((end = memchr(curline, '\n', linerem))) {
+	for (curline = line; (end = memchr(curline, '\n', linerem)); curline = end) {
 		*end++ = '\0';
+		linerem -= end - curline;
+
+		if (eat_line) {
+			eat_line = false;
+			continue;
+		}
+
 		/* Keep last line for redrawing purposes */
-		strncpy(lastline, curline, linerem);
+		memcpy(lastline, curline, end - curline);
 
 		if (!(buffer = draw_frame(lastline)))
 			continue;
-
-		linerem -= end - curline;
-		curline = end;
 	}
-	/* Shift any remaining data over */
-	if (linerem && curline != line)
+
+	if (linerem == MAX_LINE_LEN || eat_line) {
+		/* Buffer is full, so discard current line */
+		linerem = 0;
+		eat_line = true;
+	} else if (linerem && curline != line) {
+		/* Shift any remaining data over */
 		memmove(line, curline, linerem);
+	}
+
 	/* Redraw if anything new was rendered */
 	if (buffer) {
 		wl_surface_attach(wl_surface, buffer, 0, 0);

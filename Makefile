@@ -1,6 +1,7 @@
 BINS = dtao
 MANS = doc/dtao.1
 
+PREFIX ?= /usr/local
 CFLAGS += -Wall -Wextra -Wno-unused-parameter -g
 
 all: $(BINS) $(MANS)

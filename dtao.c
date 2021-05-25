@@ -13,6 +13,7 @@
 #include <sys/select.h>
 #include <time.h>
 #include <unistd.h>
+#include <wayland-client.h>
 #include "utf8.h"
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"

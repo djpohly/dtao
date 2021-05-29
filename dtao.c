@@ -134,9 +134,32 @@ parse_color(const char *str, pixman_color_t *clr)
 	clr->blue =  ((parsed >>  0) & 0xff) * 0x101;
 	return 0;
 }
+static int
+parse_movement_absolute(const char *str, uint32_t *xpos)
+{
+	if (!*str) {
+		return 1; 
+	} else if (!strchr(str, ';')) {
+		if (*str >= '0' && *str <= '9') {
+			*xpos = atoi(str);
+		} else if (*str == 'w') {
+			*xpos = atoi(++str) * width / 100;
+		} else {
+			return 1;
+		}
+	} else {
+		return 1;
+	}
+
+	if (*xpos > width)
+		*xpos = width;
+
+	return 0;
+
+}
 
 static char *
-handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg)
+handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg, uint32_t *xpos)
 {
 	char *arg, *end;
 
@@ -158,6 +181,9 @@ handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg)
 		} else if (parse_color(arg, fg)) {
 			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
+	} else if (!strcmp(cmd, "pa")) {
+		if(parse_movement_absolute (arg, xpos))
+			fprintf(stderr, "Invalid absolute motion argument \"%s\"\n", arg);
 	} else {
 		fprintf(stderr, "Unrecognized command \"%s\"\n", cmd);
 	}
@@ -220,7 +246,7 @@ draw_frame(char *text)
 		if (state == UTF8_ACCEPT && *p == '^') {
 			p++;
 			if (*p != '^') {
-				p = handle_cmd(p, &textbgcolor, &textfgcolor);
+				p = handle_cmd(p, &textbgcolor, &textfgcolor, &xpos);
 				pixman_image_unref(fgfill);
 				fgfill = pixman_image_create_solid_fill(&textfgcolor);
 				continue;

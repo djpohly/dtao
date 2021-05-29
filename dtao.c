@@ -159,41 +159,7 @@ parse_movement_arg(const char *str, uint32_t max)
 }
 
 static int
-parse_movement_absolute(char *str, uint32_t *xpos, uint32_t *ypos)
-{
-	char *xarg = str;
-	char *yarg;
-
-	/* ^pa() requires an argument */
-	if (!*str)
-		return 1; 
-
-	/* Negative numbers are invalid with absolute movements */
-	if (strchr(str, '-'))
-		return 1;
-
-	if (!(yarg = strchr(str, ';'))) {
-		*xpos = parse_movement_arg (str, width);
-	} else if (*str == ';') {
-		*ypos = parse_movement_arg (++str, height);
-	} else {
-		*yarg++ = '\0';	
-		*ypos = parse_movement_arg (yarg, height);
-		*xpos = parse_movement_arg (xarg, width);
-		*--yarg = ';';
-	}
-
-	if (*xpos > width)
-		*xpos = width;
-
-	if (*ypos > height)
-		*ypos = height;
-
-	return 0;
-}
-
-static int
-parse_movement_relative(char *str, uint32_t *xpos, uint32_t *ypos)
+parse_movement (char *str, uint32_t *xpos, uint32_t *ypos, uint32_t xoffset, uint32_t yoffset)
 {
 	char *xarg = str;
 	char *yarg;
@@ -216,14 +182,14 @@ parse_movement_relative(char *str, uint32_t *xpos, uint32_t *ypos)
 				return 1;
 			}
 		} else {
-			*xpos += parse_movement_arg (str, width);
+			*xpos = parse_movement_arg (str, width) + xoffset;
 		}
 	} else if (*str == ';') {
-		*ypos += parse_movement_arg (++str, height);
+		*ypos = parse_movement_arg (++str, height) + yoffset;
 	} else {
 		*yarg++ = '\0';	
-		*ypos += parse_movement_arg (yarg, height);
-		*xpos += parse_movement_arg (xarg, width);
+		*ypos = parse_movement_arg (yarg, height) + yoffset;
+		*xpos = parse_movement_arg (xarg, width) + xoffset;
 		*--yarg = ';';
 	}
 
@@ -261,10 +227,10 @@ handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg, uint32_t *xpos, ui
 			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
 	} else if (!strcmp(cmd, "pa")) {
-		if (parse_movement_absolute (arg, xpos, ypos))
+		if (parse_movement (arg, xpos, ypos, 0, 0))
 			fprintf(stderr, "Invalid absolute position argument \"%s\"\n", arg);
 	} else if (!strcmp(cmd, "p")) {
-		if (parse_movement_relative (arg, xpos, ypos))
+		if (parse_movement (arg, xpos, ypos, *xpos, *ypos))
 			fprintf(stderr, "Invalid relative position argument \"%s\"\n", arg);
 	} else if (!strcmp(cmd, "sx")) {
 		savedx = *xpos;

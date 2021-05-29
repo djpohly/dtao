@@ -138,79 +138,101 @@ parse_color(const char *str, pixman_color_t *clr)
 }
 
 static int
-parse_movement_absolute(const char *str, uint32_t *xpos)
+parse_movement_arg(const char *str, uint32_t max)
 {
-	if (!*str) {
+	if (!str)
+		return 0;
+
+	if (*str == '-')
+		return -(parse_movement_arg (++str, max));
+
+	if (*str == 'w')
+		return atoi(++str) * max / 100;
+
+	return atoi(str);
+}
+
+static int
+parse_movement_absolute(char *str, uint32_t *xpos, uint32_t *ypos)
+{
+	char *xarg = str;
+	char *yarg;
+
+	/* ^pa() requires an argument */
+	if (!*str)
 		return 1; 
-	} else if (!strchr(str, ';')) {
-		if (*str >= '0' && *str <= '9') {
-			*xpos = atoi(str);
-		} else if (*str == 'w') {
-			*xpos = atoi(++str) * width / 100;
-		} else {
-			return 1;
-		}
-	} else {
+
+	/* Negative numbers are invalid with absolute movements */
+	if (strchr(str, '-'))
 		return 1;
+
+	if (!(yarg = strchr(str, ';'))) {
+		*xpos = parse_movement_arg (str, width);
+	} else if (*str == ';') {
+		*ypos = parse_movement_arg (++str, height);
+	} else {
+		*yarg++ = '\0';	
+		*ypos = parse_movement_arg (yarg, height);
+		*xpos = parse_movement_arg (xarg, width);
+		*--yarg = ';';
 	}
 
 	if (*xpos > width)
 		*xpos = width;
 
-	return 0;
+	if (*ypos > height)
+		*ypos = height;
 
+	return 0;
 }
 
 static int
-parse_movement_relative(const char *str, uint32_t *xpos)
+parse_movement_relative(char *str, uint32_t *xpos, uint32_t *ypos)
 {
+	char *xarg = str;
+	char *yarg;
+
 	if (!*str) {
-		*xpos = 0;
-	} else if (!strchr(str, ';')) {
-		if (*str >= '0' && *str <= '9') {
-			*xpos += atoi(str);
-		} else if (*str == '-'){
-			if (*++str == 'w') {
-				if ((uint32_t) atoi(++str) * width / 100 < *xpos) {
-					*xpos -= atoi(str) * width / 100;
-				} else {
-					*xpos = 0;
-				}
-			} else {
-				if ((uint32_t) atoi(str) < *xpos) {
-					*xpos -= atoi(str);
-				} else {
-					*xpos = 0;
-				}
-			}
-		} else if (*str == 'w') {
-			*xpos += atoi(++str) * width / 100;
-		} else if (*str == '_') { 
+		*ypos = (height + font->ascent - font->descent) / 2;
+	} else if (!(yarg = strchr(str, ';'))) {
+		if (*str == '_') {
 			if (!strcmp(str, "_LEFT")) {
 				*xpos = 0;
 			} else if (!strcmp(str, "_RIGHT")) {
 				*xpos = width;
 			} else if (!strcmp(str, "_CENTER")) {
 				*xpos = width/2;
+			} else if (!strcmp(str, "_TOP")) {
+				*ypos = 0;
+			} else if (!strcmp(str, "_BOTTOM")) {
+				*ypos = height;
 			} else {
 				return 1;
 			}
 		} else {
-			return 1;
+			*xpos += parse_movement_arg (str, width);
 		}
+	} else if (*str == ';') {
+		*ypos += parse_movement_arg (++str, height);
 	} else {
-		return 1;
+		*yarg++ = '\0';	
+		*ypos += parse_movement_arg (yarg, height);
+		*xpos += parse_movement_arg (xarg, width);
+		*--yarg = ';';
 	}
 
 	if (*xpos > width)
 		*xpos = width;
+
+	if (*ypos > height)
+		*ypos = height;
 
 	return 0;
 
 }
 
 static char *
-handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg, uint32_t *xpos)
+handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg, uint32_t *xpos, uint32_t *ypos)
 {
 	char *arg, *end;
 
@@ -233,10 +255,10 @@ handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg, uint32_t *xpos)
 			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
 	} else if (!strcmp(cmd, "pa")) {
-		if (parse_movement_absolute (arg, xpos))
+		if (parse_movement_absolute (arg, xpos, ypos))
 			fprintf(stderr, "Invalid absolute position argument \"%s\"\n", arg);
 	} else if (!strcmp(cmd, "p")) {
-		if (parse_movement_relative (arg, xpos))
+		if (parse_movement_relative (arg, xpos, ypos))
 			fprintf(stderr, "Invalid relative position argument \"%s\"\n", arg);
 	} else if (!strcmp(cmd, "sx")) {
 		savedx = *xpos;
@@ -304,7 +326,7 @@ draw_frame(char *text)
 		if (state == UTF8_ACCEPT && *p == '^') {
 			p++;
 			if (*p != '^') {
-				p = handle_cmd(p, &textbgcolor, &textfgcolor, &xpos);
+				p = handle_cmd(p, &textbgcolor, &textfgcolor, &xpos, &ypos);
 				pixman_image_unref(fgfill);
 				fgfill = pixman_image_create_solid_fill(&textfgcolor);
 				continue;

@@ -114,7 +114,7 @@ Note: the positioning of graphics in dzen is not obvious.  dtao may opt to imple
     relative positioning: calculate X and/or Y position according to the argument format and add it to the current position
 
 * `^p()`:
-    resets Y position to default; alias for `^pa(;0)`
+    resets Y position to default; alias for `^pa(;w50)`
 
 * `^p(_LEFT)`, `^p(_CENTER)`, `^p(_RIGHT)`:
     move to left edge, center, or right edge of window; aliases for `^pa(w0)`, `^pa(w50)`, and `^pa(w100)`

@@ -136,6 +136,7 @@ parse_color(const char *str, pixman_color_t *clr)
 	clr->blue =  ((parsed >>  0) & 0xff) * 0x101;
 	return 0;
 }
+
 static int
 parse_movement_absolute(const char *str, uint32_t *xpos)
 {
@@ -146,6 +147,54 @@ parse_movement_absolute(const char *str, uint32_t *xpos)
 			*xpos = atoi(str);
 		} else if (*str == 'w') {
 			*xpos = atoi(++str) * width / 100;
+		} else {
+			return 1;
+		}
+	} else {
+		return 1;
+	}
+
+	if (*xpos > width)
+		*xpos = width;
+
+	return 0;
+
+}
+
+static int
+parse_movement_relative(const char *str, uint32_t *xpos)
+{
+	if (!*str) {
+		*xpos = 0;
+	} else if (!strchr(str, ';')) {
+		if (*str >= '0' && *str <= '9') {
+			*xpos += atoi(str);
+		} else if (*str == '-'){
+			if (*++str == 'w') {
+				if ((uint32_t) atoi(++str) * width / 100 < *xpos) {
+					*xpos -= atoi(str) * width / 100;
+				} else {
+					*xpos = 0;
+				}
+			} else {
+				if ((uint32_t) atoi(str) < *xpos) {
+					*xpos -= atoi(str);
+				} else {
+					*xpos = 0;
+				}
+			}
+		} else if (*str == 'w') {
+			*xpos += atoi(++str) * width / 100;
+		} else if (*str == '_') { 
+			if (!strcmp(str, "_LEFT")) {
+				*xpos = 0;
+			} else if (!strcmp(str, "_RIGHT")) {
+				*xpos = width;
+			} else if (!strcmp(str, "_CENTER")) {
+				*xpos = width/2;
+			} else {
+				return 1;
+			}
 		} else {
 			return 1;
 		}
@@ -185,7 +234,10 @@ handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg, uint32_t *xpos)
 		}
 	} else if (!strcmp(cmd, "pa")) {
 		if (parse_movement_absolute (arg, xpos))
-			fprintf(stderr, "Invalid absolute motion argument \"%s\"\n", arg);
+			fprintf(stderr, "Invalid absolute position argument \"%s\"\n", arg);
+	} else if (!strcmp(cmd, "p")) {
+		if (parse_movement_relative (arg, xpos))
+			fprintf(stderr, "Invalid relative position argument \"%s\"\n", arg);
 	} else if (!strcmp(cmd, "sx")) {
 		savedx = *xpos;
 	} else if (!strcmp(cmd, "rx")) {

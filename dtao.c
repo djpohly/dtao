@@ -149,6 +149,12 @@ parse_movement_arg(const char *str, uint32_t max)
 	if (*str == 'w')
 		return atoi(++str) * max / 100;
 
+	if (*str == 'd')
+		return atoi(++str) * font->descent / 100;
+
+	if (*str == 'a')
+		return atoi(++str) * font->ascent / 100;
+
 	return atoi(str);
 }
 

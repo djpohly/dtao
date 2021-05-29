@@ -58,6 +58,8 @@ static enum align titlealign, subalign;
 static bool expand;
 static bool run_display = true;
 
+static uint32_t savedx = 0;
+
 static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
 static char lastline[MAX_LINE_LEN];
@@ -182,8 +184,12 @@ handle_cmd(char *cmd, pixman_color_t *bg, pixman_color_t *fg, uint32_t *xpos)
 			fprintf(stderr, "Bad color string \"%s\"\n", arg);
 		}
 	} else if (!strcmp(cmd, "pa")) {
-		if(parse_movement_absolute (arg, xpos))
+		if (parse_movement_absolute (arg, xpos))
 			fprintf(stderr, "Invalid absolute motion argument \"%s\"\n", arg);
+	} else if (!strcmp(cmd, "sx")) {
+		savedx = *xpos;
+	} else if (!strcmp(cmd, "rx")) {
+		*xpos = savedx;
 	} else {
 		fprintf(stderr, "Unrecognized command \"%s\"\n", cmd);
 	}

@@ -18,6 +18,9 @@
 #include "wlr-layer-shell-unstable-v1-protocol.h"
 #include "xdg-shell-protocol.h"
 
+#define DPI 96
+#define SCALE 2
+
 #define BARF(fmt, ...)		do { fprintf(stderr, fmt "\n", ##__VA_ARGS__); exit(EXIT_FAILURE); } while (0)
 #define EBARF(fmt, ...)		BARF(fmt ": %s", ##__VA_ARGS__, strerror(errno))
 #define MIN(a, b)               ((a) < (b) ? (a) : (b))
@@ -314,13 +317,13 @@ layer_surface_configure(void *data,
 		struct zwlr_layer_surface_v1 *surface,
 		uint32_t serial, uint32_t w, uint32_t h)
 {
-	width = w;
-	height = h;
+	width = w * SCALE;
+	height = h * SCALE;
 	stride = width * 4;
 	bufsize = stride * height;
 
 	if (exclusive_zone > 0)
-		exclusive_zone = height;
+		exclusive_zone = h;
 	zwlr_layer_surface_v1_set_exclusive_zone(layer_surface, exclusive_zone);
 	zwlr_layer_surface_v1_ack_configure(surface, serial);
 
@@ -328,6 +331,7 @@ layer_surface_configure(void *data,
 	if (!buffer)
 		return;
 	wl_surface_attach(wl_surface, buffer, 0, 0);
+	wl_surface_set_buffer_scale(wl_surface, SCALE);
 	wl_surface_damage_buffer(wl_surface, 0, 0, width, height);
 	wl_surface_commit(wl_surface);
 }
@@ -346,6 +350,23 @@ static struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 };
 
 static void
+surface_enter(void *data, struct wl_surface *surface, struct wl_output *output)
+{
+	fprintf(stderr, "enter\n");
+}
+
+static void
+surface_leave(void *data, struct wl_surface *surface, struct wl_output *output)
+{
+	fprintf(stderr, "leave\n");
+}
+
+static struct wl_surface_listener surface_listener = {
+	.enter = surface_enter,
+	.leave = surface_leave,
+};
+
+static void
 handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version)
 {
@@ -356,7 +377,7 @@ handle_global(void *data, struct wl_registry *registry,
 		shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
 		struct wl_output *o = wl_registry_bind(registry, name,
-				&wl_output_interface, 1);
+				&wl_output_interface, 2);
 		if (output-- == 0)
 			wl_output = o;
 	} else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
@@ -411,6 +432,7 @@ read_stdin(void)
 	/* Redraw if anything new was rendered */
 	if (buffer) {
 		wl_surface_attach(wl_surface, buffer, 0, 0);
+		wl_surface_set_buffer_scale(wl_surface, SCALE);
 		wl_surface_damage_buffer(wl_surface, 0, 0, width, height);
 		wl_surface_commit(wl_surface);
 	}
@@ -570,8 +592,10 @@ main(int argc, char **argv)
 		BARF("compositor does not support all needed protocols");
 
 	/* Load selected font */
+	char dpiopt[32];
+	snprintf(dpiopt, 32, "dpi=%d", DPI * SCALE);
 	fcft_set_scaling_filter(FCFT_SCALING_FILTER_LANCZOS3);
-	font = fcft_from_name(1, (const char *[]) {fontstr}, NULL);
+	font = fcft_from_name(1, (const char *[]) {fontstr}, dpiopt);
 	if (!font)
 		BARF("could not load font");
 
@@ -579,6 +603,7 @@ main(int argc, char **argv)
 	wl_surface = wl_compositor_create_surface(compositor);
 	if (!wl_surface)
 		BARF("could not create wl_surface");
+	wl_surface_add_listener(wl_surface, &surface_listener, wl_surface);
 
 	layer_surface = zwlr_layer_shell_v1_get_layer_surface(layer_shell,
 			wl_surface, wl_output, layer, namespace);
@@ -589,7 +614,7 @@ main(int argc, char **argv)
 
 	/* Set layer size and positioning */
 	if (!height)
-		height = font->ascent + font->descent;
+		height = (font->ascent + font->descent + SCALE/2) / SCALE + 2;
 
 	zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 	zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);

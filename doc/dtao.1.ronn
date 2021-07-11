@@ -105,7 +105,7 @@ Note: the positioning of graphics in dzen is not obvious.  dtao may opt to imple
     draw circle outline centered at current position, moving right by <diameter> pixels
 
 
-### Positioning [UNIMPLEMENTED]
+### Positioning
 
 * `^pa(`<x>`)`, `^pa(;`<y>`)`, `^pa(`<x>`;`<y>`)`:
     absolute positioning: set X and/or Y position according to the argument format (see below)

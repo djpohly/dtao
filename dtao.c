@@ -92,7 +92,16 @@ static const struct wl_buffer_listener wl_buffer_listener = {
 static int
 allocate_shm_file(size_t size)
 {
+#if defined(__linux__)
 	int fd = memfd_create("surface", MFD_CLOEXEC);
+#elif defined(__FreeBSD__)
+	int fd = shm_open(SHM_ANON, O_RDWR | O_CLOEXEC, 0600);
+#else
+	char name[] = "/tmp/dtao-shm-buffer-XXXXXX";
+	int fd = mkostemp(name, O_CLOEXEC);
+	unlink(name);
+#endif
+
 	if (fd < 0)
 		return -1;
 	int ret;

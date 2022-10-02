@@ -153,16 +153,17 @@ parse_clickable_area(char *str, struct clickable *c, uint32_t xpos, uint32_t ypo
 {
 	c->x1 = xpos;
 	c->y1 = 0;
-
 	c->btn = 0;
 	while (*str != ',' && *str != '\0')
 		if (isdigit(*str)) c->btn = c->btn*10 + (*str++ - '0');
 
-	if (*str++ == '\0') BARF("bad clickarea cmd");
-	c->cmd = malloc(strlen(str) + 1);
+	if (*str++ == '\0')
+		BARF("bad clickarea cmd");
 
-	if (!c->cmd) BARF("bad malloc clickarea cmd");
-	strcpy(c->cmd, str);
+	free(c->cmd);
+	c->cmd = strdup(str);
+	if (!c->cmd)
+		EBARF("malloc: ");
 	return 0;
 }
 
@@ -347,6 +348,13 @@ draw_frame(char *text)
 		clickies[clicky_i].x2 += xdraw;
 	}
 
+	if (expand) {
+		struct wl_region *inputregion = wl_compositor_create_region(compositor);
+		wl_region_add(inputregion, xdraw, 0, MAX(maxxpos, 1), height);
+		wl_surface_set_input_region(wl_surface, inputregion);
+		wl_region_destroy(inputregion);
+	}
+
 	pixman_image_composite32(PIXMAN_OP_OVER, background, NULL, bar, 0, 0, 0, 0,
 			xdraw, 0, width, height);
 	pixman_image_composite32(PIXMAN_OP_OVER, foreground, NULL, bar, 0, 0, 0, 0,
@@ -403,9 +411,6 @@ struct input_state {
 };
 
 static void
-noop() {}
-
-static void
 wl_pointer_enter(void *data, struct wl_pointer *wl_pointer,
 			uint32_t serial, struct wl_surface *surface,
 			wl_fixed_t surface_x, wl_fixed_t surface_y)
@@ -453,11 +458,31 @@ spawn(const char *arg) {
 	if(fork() == 0) {
 		setsid();
 		execl(shell, shell, "-c", arg, (char *)NULL);
-		fprintf(stderr, "dtao: execl '%s -c %s'", shell, arg);
-		perror(" failed");
+		EBARF("dtao: execl '%s -c %s' failed: ", shell, arg);
 	}
-	wait(0);
+	if (signal(SIGCHLD, SIG_IGN) == SIG_ERR)
+		EBARF("failed to ignore SIGCHLD");
 }
+
+static void
+wl_pointer_axis(void *data, struct wl_pointer *wl_pointer, uint32_t time,
+		uint32_t axis, wl_fixed_t value)
+{}
+
+static void
+wl_pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
+		uint32_t axis_source)
+{}
+
+static void
+wl_pointer_axis_stop(void *data, struct wl_pointer *wl_pointer,
+		uint32_t time, uint32_t axis)
+{}
+
+static void
+wl_pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
+			uint32_t axis, int32_t discrete)
+{}
 
 static void
 wl_pointer_frame(void *data, struct wl_pointer *wl_pointer)
@@ -483,10 +508,10 @@ static const struct wl_pointer_listener wl_pointer_listener = {
 	.leave = wl_pointer_leave,
 	.motion = wl_pointer_motion,
 	.button = wl_pointer_button,
-	.axis = noop,
-	.axis_source = noop,
-	.axis_stop = noop,
-	.axis_discrete = noop,
+	.axis = wl_pointer_axis,
+	.axis_source = wl_pointer_axis_source,
+	.axis_stop = wl_pointer_axis_stop,
+	.axis_discrete = wl_pointer_axis_discrete,
 	.frame = wl_pointer_frame,
 };
 
@@ -545,9 +570,13 @@ handle_global(void *data, struct wl_registry *registry,
 
 }
 
+static void
+handle_global_remove(void *data, struct wl_registry *wl_registry, uint32_t name)
+{}
+
 static const struct wl_registry_listener registry_listener = {
 	.global = handle_global,
-	.global_remove = noop,
+	.global_remove = handle_global_remove,
 };
 
 static void
@@ -747,11 +776,9 @@ main(int argc, char **argv)
 
 	struct wl_registry *registry = wl_display_get_registry(display);
 
-	struct input_state *istate = calloc(1, sizeof(struct input_state));
-	if (!istate)
-		BARF("Failed to create inputstate");
+	struct input_state istate = {0};
 
-	wl_registry_add_listener(registry, &registry_listener, istate);
+	wl_registry_add_listener(registry, &registry_listener, &istate);
 	wl_display_roundtrip(display);
 
 	if (!compositor || !shm || !layer_shell)
@@ -797,7 +824,6 @@ main(int argc, char **argv)
 	wl_compositor_destroy(compositor);
 	wl_registry_destroy(registry);
 	wl_display_disconnect(display);
-	free(istate);
 
 	return 0;
 }

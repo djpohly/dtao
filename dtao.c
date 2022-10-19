@@ -51,12 +51,12 @@ static int32_t output = -1;
 static uint32_t width, height, titlewidth;
 static uint32_t stride, bufsize;
 static int lines;
-static int persist;
+static int persist = 0;
 static bool unified;
 static int exclusive_zone = -1;
 static enum align titlealign, subalign;
 static bool expand;
-static bool run_display = true;
+static int run_display = true;
 
 static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
@@ -375,7 +375,7 @@ read_stdin(void)
 	if (b < 0)
 		EBARF("read");
 	if (b == 0) {
-		run_display = 0;
+		run_display = 2;
 		return;
 	}
 	linerem += b;
@@ -422,7 +422,7 @@ event_loop(void)
 	int ret;
 	int wlfd = wl_display_get_fd(display);
 
-	while (run_display) {
+	while (run_display == 1) {
 		fd_set rfds;
 		FD_ZERO(&rfds);
 		FD_SET(STDIN_FILENO, &rfds);
@@ -440,8 +440,24 @@ event_loop(void)
 
 		if (FD_ISSET(wlfd, &rfds))
 			if (wl_display_dispatch(display) == -1)
-				break;
+				run_display = 0;
 	}
+
+	if (run_display == 2) {
+		if (persist == -1)
+			while (wl_display_roundtrip(display) != -1);
+		else {
+			struct timespec t;
+			clock_gettime(CLOCK_REALTIME, &t);
+			persist += t.tv_sec;
+			int ns = t.tv_nsec;
+
+			do {
+				clock_gettime(CLOCK_REALTIME, &t);
+			} while (t.tv_sec < persist + (t.tv_nsec < ns ? 1 : 0)
+						&& wl_display_roundtrip(display) != -1);
+		}
+ 	}
 }
 
 int
@@ -508,9 +524,7 @@ main(int argc, char **argv)
 			else
 				layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
 		} else if (!strcmp(argv[i], "-p")) {
-			if (++i >= argc)
-				BARF("option -p requires an argument");
-			persist = atoi(argv[i]);
+			persist = (++i >= argc) ? 0 : atoi(argv[i]);
 		} else if (!strcmp(argv[i], "-sa")) {
 			if (++i >= argc)
 				BARF("option -sa requires an argument");

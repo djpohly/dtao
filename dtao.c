@@ -454,13 +454,11 @@ main(int argc, char **argv)
 	uint32_t anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
 			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+	int margintop = 0, marginbottom = 0, marginleft = 0, marginright = 0;
 
 	/* Parse options */
 	for (int i = 1; i < argc; i++) {
-		if (!strcmp(argv[i], "-b")) {
-			anchor ^= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-				ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
-		} else if (!strcmp(argv[i], "-bg")) {
+		if (!strcmp(argv[i], "-bg")) {
 			if (++i >= argc)
 				BARF("option -bg requires an argument");
 			if (parse_color(argv[i], &bgcolor))
@@ -550,6 +548,25 @@ main(int argc, char **argv)
 				BARF("option -xs requires an argument");
 			/* One-based to match dzen2 */
 			output = atoi(argv[i]) - 1;
+		} else if (!strcmp(argv[i], "-x")) {
+			if (++i >= argc)
+				BARF("option -x requires an argument");
+			if (*argv[i] == '-')
+				marginright = atoi(argv[i] + 1);
+			else
+				marginleft = atoi(argv[i]);
+		} else if (!strcmp(argv[i], "-y")) {
+			if (++i >= argc)
+				BARF("option -y requires an argument");
+			if (*argv[i] == '-') {
+				marginbottom = atoi(argv[i] + 1);
+				anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+				anchor &= ~ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+			} else {
+				margintop = atoi(argv[i]);
+				anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+				anchor &= ~ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+			}
 		} else if (!strcmp(argv[i], "-z")) {
 			exclusive_zone++;
 		} else {
@@ -594,6 +611,8 @@ main(int argc, char **argv)
 
 	zwlr_layer_surface_v1_set_size(layer_surface, width, height);
 	zwlr_layer_surface_v1_set_anchor(layer_surface, anchor);
+	zwlr_layer_surface_v1_set_margin(layer_surface, margintop, marginright,
+			marginbottom, marginleft);
 	wl_surface_commit(wl_surface);
 	wl_display_roundtrip(display);
 

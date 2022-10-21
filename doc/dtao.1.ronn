@@ -58,8 +58,14 @@ dtao(1) -- general-purpose status, messaging, and notification bar for Wayland
 * `-w` <PIXEL>:
     set window width
 
+* `-x` <PIXEL>:
+    set x position on the screen
+
 * `-xs` <NUM>:
     display on output number <NUM>
+
+* `-y` <PIXEL>:
+    set y position on the screen
 
 * `-z`:
     when used once: bar will not cover "exclusive zones" of other layer-shell surfaces; when used twice: bar will request its own exclusive zone

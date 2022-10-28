@@ -137,7 +137,7 @@ The `p` and `pa` commands accept the following argument formats:
     <pct> percent of the text ascent or descent
 
 
-### Interaction [UNIMPLEMENTED]
+### Interaction
 
 * `^ca(`<btn>`,`<cmd>`)`, `^ca()`:
     defines beginning and end of a "clickable area"; when mouse button number <btn> is pressed over the text drawn between these two commands, spawn the command <cmd>

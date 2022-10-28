@@ -56,7 +56,8 @@ static bool unified;
 static int exclusive_zone = -1;
 static enum align titlealign, subalign;
 static bool expand;
-static int run_display = true;
+static bool run_display = true;
+static bool eof_stdin = false;
 
 static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
@@ -375,7 +376,7 @@ read_stdin(void)
 	if (b < 0)
 		EBARF("read");
 	if (b == 0) {
-		run_display = 2;
+		eof_stdin = true;
 		return;
 	}
 	linerem += b;
@@ -422,7 +423,7 @@ event_loop(void)
 	int ret;
 	int wlfd = wl_display_get_fd(display);
 
-	while (run_display == 1) {
+	while (run_display && !eof_stdin) {
 		fd_set rfds;
 		FD_ZERO(&rfds);
 		FD_SET(STDIN_FILENO, &rfds);
@@ -440,10 +441,10 @@ event_loop(void)
 
 		if (FD_ISSET(wlfd, &rfds))
 			if (wl_display_dispatch(display) == -1)
-				run_display = 0;
+				run_display = false;
 	}
 
-	if (run_display == 2) {
+	if (run_display) {
 		if (persist == -1)
 			while (wl_display_roundtrip(display) != -1);
 		else {
@@ -524,7 +525,9 @@ main(int argc, char **argv)
 			else
 				layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
 		} else if (!strcmp(argv[i], "-p")) {
-			persist = (++i >= argc) ? 0 : atoi(argv[i]);
+			if (i + 1 >= argc || argv[i + 1][0] == '-' ||
+					(persist = atoi(argv[i++])) == 0)
+				persist = -1;
 		} else if (!strcmp(argv[i], "-sa")) {
 			if (++i >= argc)
 				BARF("option -sa requires an argument");

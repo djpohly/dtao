@@ -423,10 +423,13 @@ event_loop(void)
 	int ret;
 	int wlfd = wl_display_get_fd(display);
 
-	while (run_display && !eof_stdin) {
+	fprintf(stderr, "%d\n", persist);
+	while (run_display && !(eof_stdin && persist == 0)) {
 		fd_set rfds;
 		FD_ZERO(&rfds);
-		FD_SET(STDIN_FILENO, &rfds);
+		if (!eof_stdin)
+			FD_SET(STDIN_FILENO, &rfds);
+
 		FD_SET(wlfd, &rfds);
 
 		/* Does this need to be inside the loop? */
@@ -436,29 +439,18 @@ event_loop(void)
 		if (ret < 0)
 			EBARF("select");
 
-		if (FD_ISSET(STDIN_FILENO, &rfds))
+		if (!eof_stdin && FD_ISSET(STDIN_FILENO, &rfds))
 			read_stdin();
 
 		if (FD_ISSET(wlfd, &rfds))
 			if (wl_display_dispatch(display) == -1)
-				run_display = false;
-	}
+				break;
 
-	if (run_display) {
-		if (persist == -1)
-			while (wl_display_roundtrip(display) != -1);
-		else {
-			struct timespec t;
-			clock_gettime(CLOCK_REALTIME, &t);
-			persist += t.tv_sec;
-			int ns = t.tv_nsec;
-
-			do {
-				clock_gettime(CLOCK_REALTIME, &t);
-			} while (t.tv_sec < persist + (t.tv_nsec < ns ? 1 : 0)
-						&& wl_display_roundtrip(display) != -1);
+		if (eof_stdin && persist > 0) {
+			alarm(persist);
+			persist = -1;
 		}
- 	}
+	}
 }
 
 int
@@ -526,7 +518,7 @@ main(int argc, char **argv)
 				layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
 		} else if (!strcmp(argv[i], "-p")) {
 			if (i + 1 >= argc || argv[i + 1][0] == '-' ||
-					(persist = atoi(argv[i++])) == 0)
+					(persist = atoi(argv[++i])) == 0)
 				persist = -1;
 		} else if (!strcmp(argv[i], "-sa")) {
 			if (++i >= argc)

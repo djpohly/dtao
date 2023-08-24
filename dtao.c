@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/select.h>
+#include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
@@ -423,33 +424,40 @@ event_loop(void)
 	int ret;
 	int wlfd = wl_display_get_fd(display);
 
-	fprintf(stderr, "%d\n", persist);
+	int tfd = 0;
+	struct itimerspec ts;
+	if (persist > 0) {
+		tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+		ts = (struct itimerspec) {.it_value.tv_sec = persist};
+	}
+
 	while (run_display && !(eof_stdin && persist == 0)) {
 		fd_set rfds;
 		FD_ZERO(&rfds);
-		if (!eof_stdin)
+		if (!eof_stdin) {
 			FD_SET(STDIN_FILENO, &rfds);
+		} else if (persist > 0) {
+			timerfd_settime(tfd, 0, &ts, NULL);
+			FD_SET(tfd, &rfds);
+		}
 
 		FD_SET(wlfd, &rfds);
 
 		/* Does this need to be inside the loop? */
 		wl_display_flush(display);
 
-		ret = select(wlfd + 1, &rfds, NULL, NULL, NULL);
+		ret = select(MAX(tfd, wlfd) + 1, &rfds, NULL, NULL, NULL);
 		if (ret < 0)
 			EBARF("select");
 
-		if (!eof_stdin && FD_ISSET(STDIN_FILENO, &rfds))
+		if (FD_ISSET(STDIN_FILENO, &rfds))
 			read_stdin();
+		else if (FD_ISSET(tfd, &rfds))
+			return;
 
 		if (FD_ISSET(wlfd, &rfds))
 			if (wl_display_dispatch(display) == -1)
 				break;
-
-		if (eof_stdin && persist > 0) {
-			alarm(persist);
-			persist = -1;
-		}
 	}
 }
 

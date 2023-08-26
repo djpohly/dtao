@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/select.h>
+#include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
@@ -51,12 +52,13 @@ static int32_t output = -1;
 static uint32_t width, height, titlewidth;
 static uint32_t stride, bufsize;
 static int lines;
-static int persist;
+static int persist = 0;
 static bool unified;
 static int exclusive_zone = -1;
 static enum align titlealign, subalign;
 static bool expand;
 static bool run_display = true;
+static bool eof_stdin = false;
 
 static struct fcft_font *font;
 static char line[MAX_LINE_LEN];
@@ -375,7 +377,7 @@ read_stdin(void)
 	if (b < 0)
 		EBARF("read");
 	if (b == 0) {
-		run_display = 0;
+		eof_stdin = true;
 		return;
 	}
 	linerem += b;
@@ -422,21 +424,36 @@ event_loop(void)
 	int ret;
 	int wlfd = wl_display_get_fd(display);
 
-	while (run_display) {
+	int tfd = 0;
+	struct itimerspec ts;
+	if (persist > 0) {
+		tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+		ts = (struct itimerspec) {.it_value.tv_sec = persist};
+	}
+
+	while (run_display && !(eof_stdin && persist == 0)) {
 		fd_set rfds;
 		FD_ZERO(&rfds);
-		FD_SET(STDIN_FILENO, &rfds);
+		if (!eof_stdin) {
+			FD_SET(STDIN_FILENO, &rfds);
+		} else if (persist > 0) {
+			timerfd_settime(tfd, 0, &ts, NULL);
+			FD_SET(tfd, &rfds);
+		}
+
 		FD_SET(wlfd, &rfds);
 
 		/* Does this need to be inside the loop? */
 		wl_display_flush(display);
 
-		ret = select(wlfd + 1, &rfds, NULL, NULL, NULL);
+		ret = select(MAX(tfd, wlfd) + 1, &rfds, NULL, NULL, NULL);
 		if (ret < 0)
 			EBARF("select");
 
 		if (FD_ISSET(STDIN_FILENO, &rfds))
 			read_stdin();
+		else if (FD_ISSET(tfd, &rfds))
+			return;
 
 		if (FD_ISSET(wlfd, &rfds))
 			if (wl_display_dispatch(display) == -1)
@@ -508,9 +525,9 @@ main(int argc, char **argv)
 			else
 				layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
 		} else if (!strcmp(argv[i], "-p")) {
-			if (++i >= argc)
-				BARF("option -p requires an argument");
-			persist = atoi(argv[i]);
+			if (i + 1 >= argc || argv[i + 1][0] == '-' ||
+					(persist = atoi(argv[++i])) == 0)
+				persist = -1;
 		} else if (!strcmp(argv[i], "-sa")) {
 			if (++i >= argc)
 				BARF("option -sa requires an argument");
